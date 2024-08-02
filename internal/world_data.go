@@ -1,9 +1,9 @@
 package internal
 
 import (
-	"artifactsmmo/internal/runner"
 	"context"
 	"fmt"
+	"github.com/promiseofcake/artifactsmmo-cli/client"
 	"sync"
 	"time"
 )
@@ -13,25 +13,26 @@ const (
 )
 
 type WorldDataCollector struct {
-	Resources runner.ResourceMap
-	mapData   []runner.MapData
+	Resources ResourceMap
+	mapData   []MapData
 	mapMu     sync.RWMutex
 	ctx       context.Context
-	client    *runner.Runner
+	client    *client.ClientWithResponses
 	Out       chan error
 }
 
-func NewWorldCollector(ctx context.Context, client *runner.Runner) (*WorldDataCollector, error) {
-	rData, err := client.GetAllResources(ctx)
+func NewWorldCollector(ctx context.Context, client *client.ClientWithResponses) (*WorldDataCollector, error) {
+	collector := &WorldDataCollector{
+
+		ctx:    ctx,
+		client: client,
+	}
+
+	rData, err := collector.getAllResources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get all resources: %w", err)
 	}
-
-	collector := &WorldDataCollector{
-		Resources: rData,
-		ctx:       ctx,
-		client:    client,
-	}
+	collector.Resources = rData
 
 	err = collector.updateWorldData()
 	if err != nil {
@@ -63,14 +64,14 @@ func (w *WorldDataCollector) start() {
 
 }
 
-func (w *WorldDataCollector) MapData() []runner.MapData {
+func (w *WorldDataCollector) MapData() []MapData {
 	w.mapMu.RLock()
 	defer w.mapMu.RUnlock()
 	return w.mapData
 }
 
 func (w *WorldDataCollector) updateWorldData() error {
-	resp, err := w.client.GetMap(w.ctx)
+	resp, err := w.updateMap(w.ctx)
 	if err != nil {
 		return fmt.Errorf("get all resources: %w", err)
 	}
@@ -80,9 +81,9 @@ func (w *WorldDataCollector) updateWorldData() error {
 	return nil
 }
 
-func (w *WorldDataCollector) GetGatherableMapSections(playerSkills map[string]int) []runner.MapData {
-	var mapData []runner.MapData
-	resourceTypeString := runner.ResourceMapContentType.String()
+func (w *WorldDataCollector) GetGatherableMapSections(playerSkills map[string]int) []MapData {
+	var mapData []MapData
+	resourceTypeString := ResourceMapContentType.String()
 
 	for _, m := range w.MapData() {
 		if m.Type != resourceTypeString {
@@ -92,7 +93,7 @@ func (w *WorldDataCollector) GetGatherableMapSections(playerSkills map[string]in
 		if !foundResource {
 			continue
 		}
-		playerLevel, foundPlayer := playerSkills[resourceData.Code]
+		playerLevel, foundPlayer := playerSkills[resourceData.Skill]
 		if !foundPlayer || playerLevel < resourceData.Level {
 			continue
 		}

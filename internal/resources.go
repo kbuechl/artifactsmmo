@@ -1,4 +1,4 @@
-package runner
+package internal
 
 import (
 	"context"
@@ -25,8 +25,8 @@ type ResourceDrops struct {
 	//min and max quantity
 }
 
-func (r *Runner) GetAllResources(ctx context.Context) (ResourceMap, error) {
-	resp, err := r.Client.GetAllResourcesResourcesGetWithResponse(ctx, &client.GetAllResourcesResourcesGetParams{
+func (w *WorldDataCollector) getAllResources(ctx context.Context) (ResourceMap, error) {
+	resp, err := w.client.GetAllResourcesResourcesGetWithResponse(ctx, &client.GetAllResourcesResourcesGetParams{
 		MinLevel: nil,
 		MaxLevel: nil,
 		Skill:    nil,

@@ -1,10 +1,12 @@
-package runner
+package internal
 
 import (
 	"context"
 	"fmt"
 	"github.com/promiseofcake/artifactsmmo-cli/client"
 )
+
+type MapContentType int
 
 const (
 	MonsterMapContentType MapContentType = iota
@@ -41,9 +43,9 @@ type MapData struct {
 	Code string
 }
 
-func (r *Runner) GetMap(ctx context.Context) ([]MapData, error) {
+func (w *WorldDataCollector) updateMap(ctx context.Context) ([]MapData, error) {
 	ct := client.GetAllMapsMapsGetParamsContentType("resource")
-	resp, err := r.Client.GetAllMapsMapsGetWithResponse(ctx, &client.GetAllMapsMapsGetParams{
+	resp, err := w.client.GetAllMapsMapsGetWithResponse(ctx, &client.GetAllMapsMapsGetParams{
 		//todo: this is paginated we need to loop through all the pages instead of using resources only
 		ContentType: &ct,
 		ContentCode: nil,
@@ -54,17 +56,24 @@ func (r *Runner) GetMap(ctx context.Context) ([]MapData, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error fetching map resources: %w", err)
 	}
-	fmt.Printf("num pages: %d\n", resp.JSON200.Pages)
+
 	resources := make([]MapData, 0, len(resp.JSON200.Data))
 
 	for _, d := range resp.JSON200.Data {
-		if content, ok := d.Content.(GenericContent); ok {
-			resources = append(resources, MapData{
-				X:    d.X,
-				Y:    d.Y,
-				Type: content.Type,
-				Code: content.Code,
-			})
+		if contentMap, ok := d.Content.(map[string]interface{}); ok {
+			// Extract values for "type" and "code"
+			contentType, typeOk := contentMap["type"].(string)
+			contentCode, codeOk := contentMap["code"].(string)
+
+			if typeOk && codeOk {
+				// Append to resources
+				resources = append(resources, MapData{
+					X:    d.X,
+					Y:    d.Y,
+					Type: contentType,
+					Code: contentCode,
+				})
+			}
 		}
 	}
 	return resources, nil
