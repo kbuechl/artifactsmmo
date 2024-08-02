@@ -83,10 +83,8 @@ func (e *GameEngine) Start() {
 			return
 		default:
 			//using the character data find a resource we are allowed to gather
-			playerData := e.player.CharacterData()
 			fmt.Println("filtering map sections based on options")
-			sections := e.world.GetGatherableMapSections(playerData.Skills)
-			next := pickRandomMapSection(sections)
+			next, err := e.getNextGatherLocation()
 			if curX, curY := e.player.CurrentPos(); curX != next.X && curY != next.Y {
 				fmt.Println("moving to space to gather resource")
 				// move to that space
@@ -105,14 +103,60 @@ func (e *GameEngine) Start() {
 
 	}
 }
+func (e *GameEngine) getNextGatherLocation() (*MapData, error) {
+	pData := e.player.Data()
+	tiles := e.world.GetGatherableMapSections(pData.Skills)
+	if len(tiles) == 0 {
+		return nil, fmt.Errorf("no gather locations found")
+	}
 
-func pickRandomMapSection(md []MapData) MapData {
+	var currentTile *MapData
+	otherTiles := make([]MapData, 0, len(tiles))
+	for _, m := range tiles {
+		if m.Y == pData.Pos.Y && m.X == pData.Pos.X {
+			currentTile = &m
+		} else {
+			otherTiles = append(otherTiles, m)
+		}
+	}
+
+	if currentTile == nil {
+		return pickRandomMapSection(tiles)
+	}
+
+	//we only want resource tiles for this method
+	if currentTile.Type != ResourceMapContentType.String() {
+		return pickRandomMapSection(otherTiles)
+	}
+
+	resource, err := e.world.GetResourceByName(currentTile.Code)
+	if err != nil {
+		fmt.Printf("could not get resource for current location %s\n", currentTile.Code)
+		return pickRandomMapSection(otherTiles)
+	}
+
+	skill := pData.Skills[resource.Skill]
+	skillLimited := false
+	for _, lvl := range pData.Skills {
+		if lvl*3 < skill {
+			skillLimited = true
+			break
+		}
+	}
+
+	if !skillLimited {
+		return currentTile, nil
+	}
+
+	return pickRandomMapSection(otherTiles)
+}
+
+func pickRandomMapSection(md []MapData) (*MapData, error) {
 	if len(md) == 0 {
-		//todo: sit idle
-		panic("no map data")
+		return nil, fmt.Errorf("no gather locations found")
 	}
 	rand.NewSource(time.Now().UnixNano())
-	return md[rand.Intn(len(md))]
+	return &md[rand.Intn(len(md))], nil
 }
 
 // todo: is this how we want to handle game loop errors?

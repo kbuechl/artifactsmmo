@@ -24,7 +24,7 @@ const (
 
 type Player struct {
 	Name   string
-	data   PlayerStatus
+	data   PlayerData
 	mu     sync.RWMutex
 	ctx    context.Context
 	client *client.ClientWithResponses
@@ -35,7 +35,7 @@ type PlayerPosition struct {
 	X int
 	Y int
 }
-type PlayerStatus struct {
+type PlayerData struct {
 	Cooldown int
 	Stamina  int
 	Hp       int
@@ -92,7 +92,7 @@ func (p *Player) start() {
 	}()
 }
 
-func (p *Player) CharacterData() PlayerStatus {
+func (p *Player) Data() PlayerData {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.data
@@ -168,8 +168,8 @@ func (p *Player) updateStatus() error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
-	p.data = PlayerStatus{
+
+	p.data = PlayerData{
 		Cooldown: resp.JSON200.Data.Cooldown,
 		Hp:       resp.JSON200.Data.Hp,
 		Stamina:  resp.JSON200.Data.Stamina,

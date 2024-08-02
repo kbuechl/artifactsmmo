@@ -102,3 +102,10 @@ func (w *WorldDataCollector) GetGatherableMapSections(playerSkills map[string]in
 
 	return mapData
 }
+
+func (w *WorldDataCollector) GetResourceByName(name string) (*Resource, error) {
+	if r, ok := w.Resources[name]; ok {
+		return &r, nil
+	}
+	return nil, fmt.Errorf("resource not found: %s", name)
+}
