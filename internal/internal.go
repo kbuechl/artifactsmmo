@@ -1,21 +1,14 @@
 package internal
 
-import "github.com/promiseofcake/artifactsmmo-cli/client"
+import (
+	"github.com/promiseofcake/artifactsmmo-go-client/client"
+	"time"
+)
 
-func newCooldown(c client.CooldownSchema) Cooldown {
-	return Cooldown{
-		Seconds:    c.RemainingSeconds,
-		Expiration: c.Expiration,
-	}
+func waitForCooldown(cooldown client.CooldownSchema) {
+	time.Sleep(cooldown.Expiration.Sub(time.Now()))
 }
 
-func convertMapInterfaceToGeneric(d any) GenericContent {
-	if m, ok := d.(map[string]interface{}); ok {
-		return GenericContent{
-			Type: m["type"].(string),
-			Code: m["code"].(string),
-		}
-	} else {
-		return GenericContent{}
-	}
+func waitForCooldownSeconds(seconds int) {
+	time.Sleep(time.Duration(seconds) * time.Second)
 }

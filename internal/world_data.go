@@ -3,19 +3,19 @@ package internal
 import (
 	"context"
 	"fmt"
-	"github.com/promiseofcake/artifactsmmo-cli/client"
+	"github.com/promiseofcake/artifactsmmo-go-client/client"
 	"sync"
 	"time"
 )
 
 const (
-	worldRefreshInterval time.Duration = time.Second * 2
+	worldRefreshInterval time.Duration = time.Second * 1
 )
 
 type WorldDataCollector struct {
 	Resources ResourceMap
-	mapData   []MapData
-	mapMu     sync.RWMutex
+	tiles     []MapTile
+	mu        sync.RWMutex
 	ctx       context.Context
 	client    *client.ClientWithResponses
 	Out       chan error
@@ -23,7 +23,6 @@ type WorldDataCollector struct {
 
 func NewWorldCollector(ctx context.Context, client *client.ClientWithResponses) (*WorldDataCollector, error) {
 	collector := &WorldDataCollector{
-
 		ctx:    ctx,
 		client: client,
 	}
@@ -61,13 +60,12 @@ func (w *WorldDataCollector) start() {
 			}
 		}
 	}()
-
 }
 
-func (w *WorldDataCollector) MapData() []MapData {
-	w.mapMu.RLock()
-	defer w.mapMu.RUnlock()
-	return w.mapData
+func (w *WorldDataCollector) MapTiles() []MapTile {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.tiles
 }
 
 func (w *WorldDataCollector) updateWorldData() error {
@@ -75,17 +73,17 @@ func (w *WorldDataCollector) updateWorldData() error {
 	if err != nil {
 		return fmt.Errorf("get all resources: %w", err)
 	}
-	w.mapMu.Lock()
-	w.mapData = resp
-	w.mapMu.Unlock()
+	w.mu.Lock()
+	w.tiles = resp
+	w.mu.Unlock()
 	return nil
 }
 
-func (w *WorldDataCollector) GetGatherableMapSections(playerSkills map[string]int) []MapData {
-	var mapData []MapData
+func (w *WorldDataCollector) GetGatherableMapSections(playerSkills map[string]int) []MapTile {
+	var mapData []MapTile
 	resourceTypeString := ResourceMapContentType.String()
 
-	for _, m := range w.MapData() {
+	for _, m := range w.MapTiles() {
 		if m.Type != resourceTypeString {
 			continue
 		}
@@ -108,4 +106,16 @@ func (w *WorldDataCollector) GetResourceByName(name string) (*Resource, error) {
 		return &r, nil
 	}
 	return nil, fmt.Errorf("resource not found: %s", name)
+}
+
+func (w *WorldDataCollector) GetMapByContentType(contentType MapContentType) []MapTile {
+	cString := contentType.String()
+
+	res := make([]MapTile, 0)
+	for _, m := range w.MapTiles() {
+		if m.Type == cString {
+			res = append(res, m)
+		}
+	}
+	return res
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/promiseofcake/artifactsmmo-cli/client"
+	"github.com/promiseofcake/artifactsmmo-go-client/client"
 )
 
 type ResourceMap map[string]Resource
@@ -34,9 +34,11 @@ func (w *WorldDataCollector) getAllResources(ctx context.Context) (ResourceMap, 
 		Page:     nil,
 		Size:     nil,
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("error getting all resources: %w", err)
 	}
+	
 	var rr ResourceResponse
 	if err := json.Unmarshal(resp.Body, &rr); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response body: %w", err)

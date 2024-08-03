@@ -3,7 +3,8 @@ package internal
 import (
 	"context"
 	"fmt"
-	"github.com/promiseofcake/artifactsmmo-cli/client"
+	"github.com/promiseofcake/artifactsmmo-go-client/client"
+	"net/http"
 )
 
 type MapContentType int
@@ -36,44 +37,50 @@ func (m MapContentType) String() string {
 	}
 }
 
-type MapData struct {
+type MapTile struct {
 	X    int
 	Y    int
 	Type string
 	Code string
 }
 
-func (w *WorldDataCollector) updateMap(ctx context.Context) ([]MapData, error) {
-	ct := client.GetAllMapsMapsGetParamsContentType("resource")
-	resp, err := w.client.GetAllMapsMapsGetWithResponse(ctx, &client.GetAllMapsMapsGetParams{
-		//todo: this is paginated we need to loop through all the pages instead of using resources only
-		ContentType: &ct,
-		ContentCode: nil,
-		Page:        nil,
-		Size:        nil,
-	})
+func (w *WorldDataCollector) updateMap(ctx context.Context) ([]MapTile, error) {
+	size := 100
+	data := make([]client.MapSchema, 0)
 
-	if err != nil {
-		return nil, fmt.Errorf("error fetching map resources: %w", err)
+	for page := 1; ; page++ {
+		resp, err := w.client.GetAllMapsMapsGetWithResponse(ctx, &client.GetAllMapsMapsGetParams{
+			ContentType: nil,
+			ContentCode: nil,
+			Page:        &page,
+			Size:        &size,
+		})
+
+		if err != nil {
+			return nil, fmt.Errorf("error fetching map resources: %w", err)
+		}
+		if resp.StatusCode() != http.StatusOK {
+			return nil, fmt.Errorf("error fetching map resources: %w", resp.Status())
+		}
+		data = append(data, resp.JSON200.Data...)
+
+		if p, pErr := resp.JSON200.Pages.AsDataPageMapSchemaPages0(); pErr != nil {
+			return nil, err
+		} else if p == page {
+			break
+		}
 	}
 
-	resources := make([]MapData, 0, len(resp.JSON200.Data))
+	resources := make([]MapTile, 0, len(data))
 
-	for _, d := range resp.JSON200.Data {
-		if contentMap, ok := d.Content.(map[string]interface{}); ok {
-			// Extract values for "type" and "code"
-			contentType, typeOk := contentMap["type"].(string)
-			contentCode, codeOk := contentMap["code"].(string)
-
-			if typeOk && codeOk {
-				// Append to resources
-				resources = append(resources, MapData{
-					X:    d.X,
-					Y:    d.Y,
-					Type: contentType,
-					Code: contentCode,
-				})
-			}
+	for _, d := range data {
+		if contentMap, cErr := d.Content.AsMapContentSchema(); cErr == nil {
+			resources = append(resources, MapTile{
+				X:    d.X,
+				Y:    d.Y,
+				Type: contentMap.Type,
+				Code: contentMap.Code,
+			})
 		}
 	}
 	return resources, nil

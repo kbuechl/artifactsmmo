@@ -5,20 +5,20 @@ import (
 	"context"
 	"fmt"
 	"github.com/spf13/viper"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
 )
 
 const (
-	tokenKey = "token"
-	urlKey   = "url"
+	urlKey = "url"
 )
 
 type config struct {
-	Token string `yaml:"token"`
-	URL   string `yaml:"url"`
-	Name  string `yaml:"name"`
+	Token   string   `yaml:"token"`
+	URL     string   `yaml:"url"`
+	Players []string `yaml:"players"`
 }
 
 func init() {
@@ -38,8 +38,15 @@ func init() {
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	exitOnError := errorHandler(cancel)
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic caught: %v", r)
+			sigChan <- syscall.SIGTERM
+		}
+	}()
 
 	cfg := &config{}
 	if err := viper.Unmarshal(cfg); err != nil {
@@ -50,33 +57,36 @@ func main() {
 		panic(fmt.Errorf("token not found in config"))
 	}
 
-	//todo: refactor to have more character names in the config and start one game per
 	game, err := internal.NewGameEngine(ctx, internal.GameConfig{
-		Token: cfg.Token,
-		URL:   cfg.URL,
-		Name:  cfg.Name,
+		Token:       cfg.Token,
+		URL:         cfg.URL,
+		PlayerNames: cfg.Players,
 	})
+
 	exitOnError(err)
 
-	go game.Start()
-
+mainloop:
 	for {
 		select {
 		case <-sigChan:
-			fmt.Println("signal caught, stopping game")
+			log.Println("signal caught, stopping game")
 			cancel()
-			break
+			break mainloop
+		case gErr := <-game.Out:
+			exitOnError(gErr)
+			break mainloop
 		default:
 
 		}
 	}
+	log.Println("game stopped")
 }
+
 func errorHandler(cancel context.CancelFunc) func(err error) {
 	return func(err error) {
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
 			cancel()
-			os.Exit(1)
+			log.Fatalln(err)
 		}
 	}
 }
