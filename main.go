@@ -1,9 +1,10 @@
 package main
 
 import (
-	"artifactsmmo/internal"
+	"artifactsmmo/internal/engine"
 	"context"
 	"fmt"
+	"github.com/sagikazarmark/slog-shim"
 	"github.com/spf13/viper"
 	"log"
 	"os"
@@ -36,6 +37,11 @@ func init() {
 }
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+	slog.SetDefault(logger)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	exitOnError := errorHandler(cancel)
 
@@ -57,7 +63,7 @@ func main() {
 		panic(fmt.Errorf("token not found in config"))
 	}
 
-	game, err := internal.NewGameEngine(ctx, internal.GameConfig{
+	game, err := engine.NewGameEngine(ctx, engine.GameConfig{
 		Token:       cfg.Token,
 		URL:         cfg.URL,
 		PlayerNames: cfg.Players,

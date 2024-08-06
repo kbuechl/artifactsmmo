@@ -1,4 +1,4 @@
-package internal
+package world
 
 import (
 	"context"
@@ -8,9 +8,11 @@ import (
 )
 
 type ResourceMap map[string]Resource
+
 type ResourceResponse struct {
 	Data []Resource `json:"data"`
 }
+
 type Resource struct {
 	Skill string          `json:"skill"`
 	Name  string          `json:"name"`
@@ -25,7 +27,7 @@ type ResourceDrops struct {
 	//min and max quantity
 }
 
-func (w *WorldDataCollector) getAllResources(ctx context.Context) (ResourceMap, error) {
+func (w *Collector) getAllResources(ctx context.Context) (ResourceMap, error) {
 	resp, err := w.client.GetAllResourcesResourcesGetWithResponse(ctx, &client.GetAllResourcesResourcesGetParams{
 		MinLevel: nil,
 		MaxLevel: nil,
@@ -38,7 +40,7 @@ func (w *WorldDataCollector) getAllResources(ctx context.Context) (ResourceMap, 
 	if err != nil {
 		return nil, fmt.Errorf("error getting all resources: %w", err)
 	}
-	
+
 	var rr ResourceResponse
 	if err := json.Unmarshal(resp.Body, &rr); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response body: %w", err)

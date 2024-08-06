@@ -1,4 +1,4 @@
-package internal
+package world
 
 import (
 	"context"
@@ -44,7 +44,7 @@ type MapTile struct {
 	Code string
 }
 
-func (w *WorldDataCollector) updateMap(ctx context.Context) ([]MapTile, error) {
+func (w *Collector) updateMap(ctx context.Context) ([]MapTile, error) {
 	size := 100
 	data := make([]client.MapSchema, 0)
 
@@ -84,4 +84,21 @@ func (w *WorldDataCollector) updateMap(ctx context.Context) ([]MapTile, error) {
 		}
 	}
 	return resources, nil
+}
+
+func (w *Collector) MapTiles() []MapTile {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.tiles
+}
+
+func (w *Collector) loadMapTiles() error {
+	resp, err := w.updateMap(w.ctx)
+	if err != nil {
+		return fmt.Errorf("get all resources: %w", err)
+	}
+	w.mu.Lock()
+	w.tiles = resp
+	w.mu.Unlock()
+	return nil
 }
