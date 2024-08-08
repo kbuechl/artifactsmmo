@@ -24,6 +24,7 @@ type Player struct {
 	In          chan *commands.Command
 	logger      *slog.Logger
 	bankChannel chan models.BankResponse
+	errChan     chan error
 }
 
 type PlayerPosition struct {
@@ -52,7 +53,7 @@ type PlayerData struct {
 }
 
 // Player is the character abstraction from the engine.
-func NewPlayer(ctx context.Context, name string, client *client.ClientWithResponses, rc chan commands.Response, bc chan models.BankResponse) (*Player, error) {
+func NewPlayer(ctx context.Context, name string, client *client.ClientWithResponses, rc chan commands.Response, bc chan models.BankResponse, errChan chan error) *Player {
 	logger := slog.Default().With("player", name)
 	p := &Player{
 		Name:        name,
@@ -62,18 +63,20 @@ func NewPlayer(ctx context.Context, name string, client *client.ClientWithRespon
 		In:          make(chan *commands.Command),
 		logger:      logger,
 		bankChannel: bc,
-	}
-
-	if err := p.getData(); err != nil {
-		return nil, err
+		errChan:     errChan,
 	}
 
 	go p.start()
 
-	return p, nil
+	return p
 }
 
 func (p *Player) start() {
+	if err := p.getData(); err != nil {
+		p.errChan <- fmt.Errorf("error getting data in character %s: %s", p.Name, err)
+		return
+	}
+
 	//send initial command to tell eng online
 	p.engineChan <- commands.Response{Name: p.Name, Code: commands.PlayerStartedCode}
 
@@ -274,9 +277,13 @@ func (p *Player) UpdateData(s client.CharacterSchema) {
 	}
 	p.mu.Unlock()
 
-	if cooldown, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0(); err == nil && cooldown.After(time.Now()) {
-		waitForCooldown(cooldown)
+	if expiration, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0(); err != nil {
+		panic(err)
+	} else if expiration.After(time.Now()) {
+		//waitForCooldown(expiration) //todo: there is an issue here with expiration expiring slightly before
+		waitForCooldownSeconds(s.Cooldown)
 	}
+
 }
 
 func (p *Player) InventoryCapacity() int {
@@ -294,14 +301,15 @@ func (p *Player) InventoryCapacity() int {
 func (p *Player) Fight() int {
 	resp, err := p.client.ActionFightMyNameActionFightPostWithResponse(p.ctx, p.Name)
 	if err != nil {
-		p.logger.Debug("fight inventory: %v", err)
+		p.logger.Debug("fight error", "error", err)
 	}
 	if resp.StatusCode() != 200 {
-		p.logger.Debug("got non 200 status from fight", resp.StatusCode())
-	} else {
-		p.logger.Debug("fight result", "result", resp.JSON200.Data.Fight.Result, "turns", resp.JSON200.Data.Fight.Turns)
-		p.UpdateData(resp.JSON200.Data.Character)
+		p.logger.Debug("got non 200 status from fight", "code", resp.StatusCode())
+		return resp.StatusCode()
 	}
+
+	p.logger.Debug("fight result", "result", resp.JSON200.Data.Fight.Result, "turns", resp.JSON200.Data.Fight.Turns)
+	p.UpdateData(resp.JSON200.Data.Character)
 
 	return resp.StatusCode()
 }

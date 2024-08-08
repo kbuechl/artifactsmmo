@@ -12,14 +12,15 @@ import (
 )
 
 type GameEngine struct {
-	players map[string]*player.Player
-	In      chan commands.Response
-	world   *world.Collector
-	ctx     context.Context
-	cancel  context.CancelFunc
-	Out     chan error
-	errChan chan error
-	logger  *slog.Logger
+	players   map[string]*player.Player
+	In        chan commands.Response
+	playerErr chan error
+	world     *world.Collector
+	ctx       context.Context
+	cancel    context.CancelFunc
+	Out       chan error
+	errChan   chan error
+	logger    *slog.Logger
 }
 
 type GameConfig struct {
@@ -48,23 +49,20 @@ func NewGameEngine(ctx context.Context, cfg GameConfig) (*GameEngine, error) {
 	}
 
 	engine := &GameEngine{
-		In:      make(chan commands.Response),
-		world:   wc,
-		ctx:     gameCtx,
-		cancel:  cancel,
-		errChan: make(chan error),
-		Out:     make(chan error),
-		players: map[string]*player.Player{},
-		logger:  slog.Default().With("runner", "engine"),
+		In:        make(chan commands.Response),
+		world:     wc,
+		ctx:       gameCtx,
+		cancel:    cancel,
+		errChan:   make(chan error),
+		Out:       make(chan error),
+		players:   map[string]*player.Player{},
+		logger:    slog.Default().With("runner", "engine"),
+		playerErr: make(chan error),
 	}
 
 	for _, name := range cfg.PlayerNames {
 		engine.logger.Debug(fmt.Sprintf("starting player %s", name))
-		p, playerError := player.NewPlayer(ctx, name, c, engine.In, wc.BankChannel)
-		if playerError != nil {
-			cancel()
-			return nil, fmt.Errorf("cannot create player for %s: %w", name, err)
-		}
+		p := player.NewPlayer(ctx, name, c, engine.In, wc.BankChannel, engine.playerErr)
 		engine.players[name] = p
 	}
 
@@ -81,6 +79,8 @@ func (e *GameEngine) MonitorForError() {
 			e.exitOnError(err)
 		case err := <-e.world.Out:
 			e.exitOnError(err)
+		case err := <-e.Out:
+			e.logger.Error(err.Error())
 		case <-e.ctx.Done():
 			return
 		}
@@ -108,7 +108,7 @@ func (e *GameEngine) generatePlayerCommand(resp commands.Response, player *playe
 			return e.newAcceptTaskCommand()
 		}
 
-		if player.Data().Task.Progress == player.Data().Task.Total {
+		if player.Data().Task.Progress >= player.Data().Task.Total {
 			return e.newCompleteTaskCommand()
 		}
 
@@ -153,7 +153,7 @@ func (e *GameEngine) Start() {
 			if !ok {
 				e.exitOnError(fmt.Errorf("p %s not found", cr.Name))
 			}
-			e.logger.Debug(fmt.Sprintf("received code %d for p %s", cr.Code, cr.Name))
+			e.logger.Debug(fmt.Sprintf("received code %d for player %s", cr.Code, cr.Name))
 			if cmd, err := e.generatePlayerCommand(cr, p); err != nil {
 				e.exitOnError(err)
 			} else {
