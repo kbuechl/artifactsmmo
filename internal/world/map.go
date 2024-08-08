@@ -1,16 +1,18 @@
 package world
 
 import (
+	"artifactsmmo/internal/models"
 	"context"
 	"fmt"
 	"github.com/promiseofcake/artifactsmmo-go-client/client"
+	"math"
 	"net/http"
 )
 
-type MapContentType int
+type mapContentType int
 
 const (
-	MonsterMapContentType MapContentType = iota
+	MonsterMapContentType mapContentType = iota
 	ResourceMapContentType
 	WorkshopMapContentType
 	BankMapContentType
@@ -18,7 +20,7 @@ const (
 	GrandExchangeContentType
 )
 
-func (m MapContentType) String() string {
+func (m mapContentType) String() string {
 	switch m {
 	case MonsterMapContentType:
 		return "monster"
@@ -29,7 +31,7 @@ func (m MapContentType) String() string {
 	case BankMapContentType:
 		return "bank"
 	case TaskMasterContentType:
-		return "task_master"
+		return "tasks_master"
 	case GrandExchangeContentType:
 		return "grand_exchange"
 	default:
@@ -37,14 +39,7 @@ func (m MapContentType) String() string {
 	}
 }
 
-type MapTile struct {
-	X    int
-	Y    int
-	Type string
-	Code string
-}
-
-func (w *Collector) updateMap(ctx context.Context) ([]MapTile, error) {
+func (w *Collector) updateMap(ctx context.Context) ([]models.MapTile, error) {
 	size := 100
 	data := make([]client.MapSchema, 0)
 
@@ -71,11 +66,11 @@ func (w *Collector) updateMap(ctx context.Context) ([]MapTile, error) {
 		}
 	}
 
-	resources := make([]MapTile, 0, len(data))
+	resources := make([]models.MapTile, 0, len(data))
 
 	for _, d := range data {
 		if contentMap, cErr := d.Content.AsMapContentSchema(); cErr == nil {
-			resources = append(resources, MapTile{
+			resources = append(resources, models.MapTile{
 				X:    d.X,
 				Y:    d.Y,
 				Type: contentMap.Type,
@@ -86,7 +81,7 @@ func (w *Collector) updateMap(ctx context.Context) ([]MapTile, error) {
 	return resources, nil
 }
 
-func (w *Collector) MapTiles() []MapTile {
+func (w *Collector) MapTiles() []models.MapTile {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.tiles
@@ -101,4 +96,24 @@ func (w *Collector) loadMapTiles() error {
 	w.tiles = resp
 	w.mu.Unlock()
 	return nil
+}
+
+func (w *Collector) FindClosestTile(code string, x int, y int) *models.MapTile {
+	var closest *models.MapTile
+	distance := math.MaxInt
+	for _, t := range w.MapTiles() {
+		if t.Code == code {
+			d := getDistance(x, y, t.X, t.Y)
+			if d < distance {
+				closest = &t
+				distance = d
+			}
+		}
+	}
+
+	return closest
+}
+
+func getDistance(x1, y1, x2, y2 int) int {
+	return int(math.Abs(float64(x1)-float64(x2)) + math.Abs(float64(y1)-float64(y2)))
 }

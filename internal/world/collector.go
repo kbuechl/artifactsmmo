@@ -1,23 +1,20 @@
 package world
 
 import (
+	"artifactsmmo/internal/models"
 	"context"
 	"fmt"
 	"github.com/promiseofcake/artifactsmmo-go-client/client"
 	"github.com/sagikazarmark/slog-shim"
 	"net/http"
+	"slices"
 	"sync"
 )
 
-type BankResponse struct {
-	Gold  *int
-	Items *[]client.SimpleItemSchema
-}
-
 type Collector struct {
 	Resources   ResourceMap
-	tiles       []MapTile
-	Monsters    []Monster
+	tiles       []models.MapTile
+	Monsters    []models.Monster
 	bankItems   []client.SimpleItemSchema
 	bankGold    int
 	mu          sync.RWMutex
@@ -25,7 +22,7 @@ type Collector struct {
 	client      *client.ClientWithResponses
 	Out         chan error
 	logger      slog.Logger
-	BankChannel chan BankResponse
+	BankChannel chan models.BankResponse
 }
 
 func NewCollector(ctx context.Context, c *client.ClientWithResponses) (*Collector, error) {
@@ -33,7 +30,7 @@ func NewCollector(ctx context.Context, c *client.ClientWithResponses) (*Collecto
 		ctx:         ctx,
 		client:      c,
 		Out:         make(chan error),
-		BankChannel: make(chan BankResponse),
+		BankChannel: make(chan models.BankResponse),
 	}
 
 	rData, err := collector.getAllResources(ctx)
@@ -136,28 +133,6 @@ func (w *Collector) UpdateBankGold(q int) {
 	w.bankGold = q
 }
 
-func (w *Collector) GetGatherableMapTiles(playerSkills map[string]int) []MapTile {
-	var mapData []MapTile
-	resourceTypeString := ResourceMapContentType.String()
-
-	for _, m := range w.MapTiles() {
-		if m.Type != resourceTypeString {
-			continue
-		}
-		resourceData, foundResource := w.Resources[m.Code]
-		if !foundResource {
-			continue
-		}
-		playerLevel, foundPlayer := playerSkills[resourceData.Skill]
-		if !foundPlayer || playerLevel < resourceData.Level {
-			continue
-		}
-		mapData = append(mapData, m)
-	}
-
-	return mapData
-}
-
 func (w *Collector) GetResourceByName(name string) (*Resource, error) {
 	if r, ok := w.Resources[name]; ok {
 		return &r, nil
@@ -165,10 +140,27 @@ func (w *Collector) GetResourceByName(name string) (*Resource, error) {
 	return nil, fmt.Errorf("resource not found: %s", name)
 }
 
-func (w *Collector) GetMapByContentType(contentType MapContentType) []*MapTile {
+// GetResourcesBySkill filters out resources based on the skill and the current skill level, ordered by level desc
+func (w *Collector) GetResourcesBySkill(skill string, level int) []Resource {
+	data := make([]Resource, 0)
+
+	for _, r := range w.Resources {
+		if r.Skill == skill && r.Level <= level {
+			data = append(data, r)
+		}
+	}
+
+	slices.SortFunc(data, func(a, b Resource) int {
+		return b.Level - a.Level
+	})
+
+	return data
+}
+
+func (w *Collector) GetMapByContentType(contentType mapContentType) []*models.MapTile {
 	cString := contentType.String()
 
-	res := make([]*MapTile, 0)
+	res := make([]*models.MapTile, 0)
 	for _, m := range w.MapTiles() {
 		if m.Type == cString {
 			res = append(res, &m)

@@ -3,24 +3,18 @@ package engine
 import (
 	"artifactsmmo/internal/commands"
 	"artifactsmmo/internal/player"
-	world2 "artifactsmmo/internal/world"
+	"artifactsmmo/internal/world"
 	"context"
 	"fmt"
 	"github.com/promiseofcake/artifactsmmo-go-client/client"
 	"github.com/sagikazarmark/slog-shim"
-	"math/rand"
 	"net/http"
-	"time"
-)
-
-const (
-	PlayerStartedCode = -1
 )
 
 type GameEngine struct {
 	players map[string]*player.Player
 	In      chan commands.Response
-	world   *world2.Collector
+	world   *world.Collector
 	ctx     context.Context
 	cancel  context.CancelFunc
 	Out     chan error
@@ -47,7 +41,7 @@ func NewGameEngine(ctx context.Context, cfg GameConfig) (*GameEngine, error) {
 		return nil, fmt.Errorf("cannot create client: %w", err)
 	}
 
-	wc, err := world2.NewCollector(ctx, c)
+	wc, err := world.NewCollector(ctx, c)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("cannot create world collector: %w", err)
@@ -61,7 +55,7 @@ func NewGameEngine(ctx context.Context, cfg GameConfig) (*GameEngine, error) {
 		errChan: make(chan error),
 		Out:     make(chan error),
 		players: map[string]*player.Player{},
-		logger:  slog.Default().With("engine"),
+		logger:  slog.Default().With("runner", "engine"),
 	}
 
 	for _, name := range cfg.PlayerNames {
@@ -100,8 +94,8 @@ func (e *GameEngine) generatePlayerCommand(resp commands.Response, player *playe
 	if resp.Code == 497 {
 		//player needs to deposit at the bank now
 		return e.newDepositCommand(player)
-	} else if resp.Code != 200 && resp.Code != PlayerStartedCode {
-		e.logger.Debug("player response", resp.Code, "player", player.Name)
+	} else if resp.Code != 200 && resp.Code != commands.PlayerStartedCode {
+		e.logger.Debug("got response from player", "code", resp.Code, "player", player.Name)
 		return nil, fmt.Errorf("player %s responded with %d", resp.Name, resp.Code)
 	} else {
 		//will this be an issue for crafting?
@@ -109,9 +103,45 @@ func (e *GameEngine) generatePlayerCommand(resp commands.Response, player *playe
 			return e.newDepositCommand(player)
 		}
 
-		//determine what we should do next
-		//todo: make decisions on fight vs craft vs gather
-		return e.newGatherCommand(player)
+		//does the player have an active task?
+		if player.Data().Task == nil {
+			return e.newAcceptTaskCommand()
+		}
+
+		if player.Data().Task.Progress == player.Data().Task.Total {
+			return e.newCompleteTaskCommand()
+		}
+
+		taskCode := player.Data().Task.Code
+
+		switch player.Data().Task.Type {
+		case "monsters":
+			return e.newFightCommand(taskCode, player)
+		case "resources":
+			return e.newGatherCommand(taskCode, player)
+		default:
+			//todo: crafting
+			e.logger.Warn("unmapped task type", "type", player.Data().Task.Type)
+			//for now just prioritize lowest skill to mine
+			pData := player.Data()
+			minSkill := ""
+			for skill, lvl := range pData.Skills {
+				if minSkill == "" {
+					minSkill = skill
+					continue
+				}
+				if lvl < pData.Skills[minSkill] {
+					minSkill = skill
+				}
+			}
+			resources := e.world.GetResourcesBySkill(minSkill, pData.Skills[minSkill])
+
+			if len(resources) == 0 {
+				panic(fmt.Sprintf("no resources found for skill %s", minSkill))
+			}
+
+			return e.newGatherCommand(resources[0].Name, player)
+		}
 	}
 }
 
@@ -119,15 +149,15 @@ func (e *GameEngine) Start() {
 	for {
 		select {
 		case cr := <-e.In:
-			player, ok := e.players[cr.Name]
+			p, ok := e.players[cr.Name]
 			if !ok {
-				e.exitOnError(fmt.Errorf("player %s not found", cr.Name))
+				e.exitOnError(fmt.Errorf("p %s not found", cr.Name))
 			}
-			e.logger.Debug("code", cr.Code, "player", cr.Name)
-			if cmd, err := e.generatePlayerCommand(cr, player); err != nil {
+			e.logger.Debug(fmt.Sprintf("received code %d for p %s", cr.Code, cr.Name))
+			if cmd, err := e.generatePlayerCommand(cr, p); err != nil {
 				e.exitOnError(err)
 			} else {
-				player.In <- cmd
+				p.In <- cmd
 			}
 		default:
 			//loop
@@ -137,7 +167,7 @@ func (e *GameEngine) Start() {
 
 func (e *GameEngine) newDepositCommand(player *player.Player) (*commands.Command, error) {
 	//find bank
-	tiles := e.world.GetMapByContentType(world2.BankMapContentType)
+	tiles := e.world.GetMapByContentType(world.BankMapContentType)
 
 	if len(tiles) == 0 {
 		return nil, fmt.Errorf("could not find bank")
@@ -151,58 +181,11 @@ func (e *GameEngine) newDepositCommand(player *player.Player) (*commands.Command
 	}, nil
 }
 
-func (e *GameEngine) newGatherCommand(player *player.Player) (*commands.Command, error) {
+func (e *GameEngine) newGatherCommand(resourceCode string, player *player.Player) (*commands.Command, error) {
 	e.logger.Debug("filtering gather location")
 	pData := player.Data()
-	tiles := e.world.GetGatherableMapTiles(pData.Skills)
-	if len(tiles) == 0 {
-		return nil, fmt.Errorf("no gather locations found")
-	}
 
-	var currentTile *world2.MapTile
-	otherTiles := make([]world2.MapTile, 0, len(tiles))
-	for _, m := range tiles {
-		if m.Y == pData.Pos.Y && m.X == pData.Pos.X {
-			currentTile = &m
-		} else {
-			otherTiles = append(otherTiles, m)
-		}
-	}
-
-	//we only want to use current tile if it's a resource tile for gather
-	if currentTile == nil || currentTile.Type != world2.ResourceMapContentType.String() {
-		return gatherRandomTile(otherTiles)
-	}
-
-	resource, err := e.world.GetResourceByName(currentTile.Code)
-	if err != nil {
-		e.logger.Debug("could not get resource for current location", "code", currentTile.Code)
-		return gatherRandomTile(otherTiles)
-	}
-
-	skill := pData.Skills[resource.Skill]
-	skillLimited := false
-	for _, lvl := range pData.Skills {
-		if lvl*3 < skill {
-			skillLimited = true
-			break
-		}
-	}
-
-	if !skillLimited {
-		return commands.NewCommand(commands.GatherAction, nil), nil
-	}
-
-	return gatherRandomTile(otherTiles)
-}
-
-func gatherRandomTile(md []world2.MapTile) (*commands.Command, error) {
-	if len(md) == 0 {
-		return nil, fmt.Errorf("no gather locations found")
-	}
-	rand.NewSource(time.Now().UnixNano())
-	tile := &md[rand.Intn(len(md))]
-
+	tile := e.world.FindClosestTile(resourceCode, pData.Pos.X, pData.Pos.Y)
 	return &commands.Command{
 		Steps: []commands.Step{
 			{
@@ -218,7 +201,7 @@ func gatherRandomTile(md []world2.MapTile) (*commands.Command, error) {
 // todo: is this how we want to handle game loop errors?
 func (e *GameEngine) exitOnError(err error) {
 	if err != nil {
-		e.logger.Error("error in game loop", err)
+		e.logger.Error("error in game loop", "error", err)
 		e.Out <- err
 		e.cancel()
 	}
@@ -234,18 +217,31 @@ func (e *GameEngine) newFightCommand(monster string, player *player.Player) (*co
 	//find closest tile with the monster on it
 	//add fight step
 
-	//get monsters we can fight on the map
+	tile := e.world.FindClosestTile(monster, player.Data().Pos.X, player.Data().Pos.Y)
 
-	//find monster but prioritize the current square
+	cmd.AddStep(commands.MoveAction, tile)
+	cmd.AddStep(commands.FightAction, nil)
+	return cmd, nil
+}
 
-	for _, t := range e.world.MapTiles() {
-		if t.Code == monster {
-
-		}
+func (e *GameEngine) newAcceptTaskCommand() (*commands.Command, error) {
+	tiles := e.world.GetMapByContentType(world.TaskMasterContentType)
+	if len(tiles) == 0 {
+		return nil, fmt.Errorf("could not find task master")
 	}
-	//move to square
 
-	//fight
+	cmd := commands.NewCommand(commands.MoveAction, tiles[0])
+	cmd.AddStep(commands.AcceptTask, nil)
+	return cmd, nil
+}
 
+func (e *GameEngine) newCompleteTaskCommand() (*commands.Command, error) {
+	tiles := e.world.GetMapByContentType(world.TaskMasterContentType)
+	if len(tiles) == 0 {
+		return nil, fmt.Errorf("could not find task master")
+	}
+
+	cmd := commands.NewCommand(commands.MoveAction, tiles[0])
+	cmd.AddStep(commands.CompleteTask, nil)
 	return cmd, nil
 }

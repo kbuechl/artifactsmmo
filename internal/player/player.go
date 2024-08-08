@@ -1,9 +1,8 @@
 package player
 
 import (
-	"artifactsmmo/internal"
-	"artifactsmmo/internal/engine"
-	"artifactsmmo/internal/world"
+	"artifactsmmo/internal/commands"
+	"artifactsmmo/internal/models"
 	"context"
 	"fmt"
 	"github.com/promiseofcake/artifactsmmo-go-client/client"
@@ -11,25 +10,6 @@ import (
 	"net/http"
 	"sync"
 	"time"
-)
-
-const (
-	WoodcuttingSkill      = "woodcutting"
-	MiningSkill           = "mining"
-	FishingSkill          = "fishing"
-	WeaponCraftingSkill   = "weaponcrafting"
-	JeweleryCraftingSkill = "jewelerycrafting"
-	CookingSkill          = "cooking"
-	GearcraftingSkill     = "gearcrafting"
-)
-
-type AttackType string
-
-const (
-	Air   AttackType = "air"
-	Earth AttackType = "earth"
-	Water AttackType = "water"
-	Fire  AttackType = "fire"
 )
 
 const maxFightRounds = 100
@@ -40,10 +20,10 @@ type Player struct {
 	mu          sync.RWMutex
 	ctx         context.Context
 	client      *client.ClientWithResponses
-	engineChan  chan internal.CommandResponse
-	In          chan *internal.Command
+	engineChan  chan commands.Response
+	In          chan *commands.Command
 	logger      *slog.Logger
-	bankChannel chan world.BankResponse
+	bankChannel chan models.BankResponse
 }
 
 type PlayerPosition struct {
@@ -51,27 +31,35 @@ type PlayerPosition struct {
 	Y int
 }
 
+type PlayerTask struct {
+	Code     string
+	Type     string
+	Progress int
+	Total    int
+}
+
 type PlayerData struct {
 	Stamina      int
 	Hp           int
 	Skills       map[string]int
 	Pos          PlayerPosition
+	Task         *PlayerTask
 	MaxInventory int
 	Inventory    []client.InventorySlot
 	Level        int
-	AttackStats  map[AttackType]int
-	DefenseStats map[AttackType]int
+	AttackStats  map[models.AttackType]int
+	DefenseStats map[models.AttackType]int
 }
 
 // Player is the character abstraction from the engine.
-func NewPlayer(ctx context.Context, name string, client *client.ClientWithResponses, rc chan internal.CommandResponse, bc chan world.BankResponse) (*Player, error) {
+func NewPlayer(ctx context.Context, name string, client *client.ClientWithResponses, rc chan commands.Response, bc chan models.BankResponse) (*Player, error) {
 	logger := slog.Default().With("player", name)
 	p := &Player{
 		Name:        name,
 		client:      client,
 		ctx:         ctx,
 		engineChan:  rc,
-		In:          make(chan *internal.Command),
+		In:          make(chan *commands.Command),
 		logger:      logger,
 		bankChannel: bc,
 	}
@@ -87,7 +75,7 @@ func NewPlayer(ctx context.Context, name string, client *client.ClientWithRespon
 
 func (p *Player) start() {
 	//send initial command to tell eng online
-	p.engineChan <- internal.CommandResponse{Name: p.Name, Code: engine.PlayerStartedCode}
+	p.engineChan <- commands.Response{Name: p.Name, Code: commands.PlayerStartedCode}
 
 	for {
 		select {
@@ -104,21 +92,27 @@ func (p *Player) start() {
 // handleCommand will handle a command from the engine, the steps are followed in order unless a non 200 response is given, when that happens
 // we return the action and the code so the engine can decide the next steps.
 // Players are responsible for handling cooldowns before moving onto the next step
-func (p *Player) handleCommand(cmd *internal.Command) internal.CommandResponse {
-	resp := internal.CommandResponse{Name: p.Name}
+func (p *Player) handleCommand(cmd *commands.Command) commands.Response {
+	resp := commands.Response{Name: p.Name}
 	for _, step := range cmd.Steps {
 		switch step.Action {
-		case internal.MoveAction:
-			tile, ok := step.Data.(*world.MapTile)
+		case commands.MoveAction:
+			tile, ok := step.Data.(*models.MapTile)
 			if !ok {
 				//todo: need to handle errors better
 				panic("could not cast tile to MapTile")
 			}
 			resp.Code = p.Move(tile.X, tile.Y)
-		case internal.GatherAction:
+		case commands.GatherAction:
 			resp.Code = p.Gather()
-		case internal.DepositAction:
+		case commands.DepositAction:
 			resp.Code = p.DepositInventory()
+		case commands.AcceptTask:
+			_, resp.Code = p.AcceptNewTask()
+		case commands.CompleteTask:
+			_, resp.Code = p.CompleteTask()
+		case commands.FightAction:
+			resp.Code = p.Fight()
 		default:
 			//todo: dont panic
 			panic(fmt.Sprintf("unknown action: %v", step.Action))
@@ -170,7 +164,7 @@ func (p *Player) Gather() int {
 		return resp.StatusCode()
 	}
 
-	if resp.StatusCode() == 200 {
+	if resp.StatusCode() == http.StatusOK {
 		p.UpdateData(resp.JSON200.Data.Character)
 	}
 
@@ -218,7 +212,7 @@ func (p *Player) DepositItem(code string, qty int) int {
 	}
 
 	if resp.HTTPResponse.StatusCode == 200 {
-		p.bankChannel <- world.BankResponse{
+		p.bankChannel <- models.BankResponse{
 			Gold:  nil,
 			Items: &resp.JSON200.Data.Bank,
 		}
@@ -234,43 +228,53 @@ func (p *Player) DepositItem(code string, qty int) int {
 func (p *Player) UpdateData(s client.CharacterSchema) {
 	p.mu.Lock()
 
+	var task *PlayerTask
+
+	if s.Task != "" {
+		task = &PlayerTask{
+			Code:     s.Task,
+			Type:     s.TaskType,
+			Progress: s.TaskProgress,
+			Total:    s.TaskTotal,
+		}
+	}
+
 	p.data = PlayerData{
 		Hp:           s.Hp,
 		Stamina:      s.Stamina,
 		Level:        s.Level,
 		MaxInventory: s.InventoryMaxItems,
 		Inventory:    *s.Inventory,
+		Task:         task,
 		Pos: PlayerPosition{
 			X: s.X,
 			Y: s.Y,
 		},
 		Skills: map[string]int{
-			WoodcuttingSkill:      s.WoodcuttingLevel,
-			FishingSkill:          s.FishingLevel,
-			MiningSkill:           s.MiningLevel,
-			GearcraftingSkill:     s.GearcraftingLevel,
-			CookingSkill:          s.CookingLevel,
-			WeaponCraftingSkill:   s.WeaponcraftingLevel,
-			JeweleryCraftingSkill: s.JewelrycraftingLevel,
+			models.WoodcuttingSkill:      s.WoodcuttingLevel,
+			models.FishingSkill:          s.FishingLevel,
+			models.MiningSkill:           s.MiningLevel,
+			models.GearcraftingSkill:     s.GearcraftingLevel,
+			models.CookingSkill:          s.CookingLevel,
+			models.WeaponCraftingSkill:   s.WeaponcraftingLevel,
+			models.JeweleryCraftingSkill: s.JewelrycraftingLevel,
 		},
-		AttackStats: map[AttackType]int{
-			Fire:  calculateElementDamage(s.AttackFire, s.DmgFire),
-			Air:   calculateElementDamage(s.AttackAir, s.DmgAir),
-			Water: calculateElementDamage(s.AttackWater, s.DmgWater),
-			Earth: calculateElementDamage(s.AttackEarth, s.DmgEarth),
+		AttackStats: map[models.AttackType]int{
+			models.Fire:  calculateElementDamage(s.AttackFire, s.DmgFire),
+			models.Air:   calculateElementDamage(s.AttackAir, s.DmgAir),
+			models.Water: calculateElementDamage(s.AttackWater, s.DmgWater),
+			models.Earth: calculateElementDamage(s.AttackEarth, s.DmgEarth),
 		},
-		DefenseStats: map[AttackType]int{
-			Fire:  s.ResFire,
-			Air:   s.ResAir,
-			Water: s.ResWater,
-			Earth: s.ResEarth,
+		DefenseStats: map[models.AttackType]int{
+			models.Fire:  s.ResFire,
+			models.Air:   s.ResAir,
+			models.Water: s.ResWater,
+			models.Earth: s.ResEarth,
 		},
 	}
 	p.mu.Unlock()
 
-	if cooldown, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0(); err != nil {
-		panic(err) //this union type stuff is dumb
-	} else {
+	if cooldown, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0(); err == nil && cooldown.After(time.Now()) {
 		waitForCooldown(cooldown)
 	}
 }
@@ -295,14 +299,14 @@ func (p *Player) Fight() int {
 	if resp.StatusCode() != 200 {
 		p.logger.Debug("got non 200 status from fight", resp.StatusCode())
 	} else {
-		p.logger.Debug("fight result", resp.JSON200.Data.Fight.Result, "turns", resp.JSON200.Data.Fight.Turns)
+		p.logger.Debug("fight result", "result", resp.JSON200.Data.Fight.Result, "turns", resp.JSON200.Data.Fight.Turns)
 		p.UpdateData(resp.JSON200.Data.Character)
 	}
 
 	return resp.StatusCode()
 }
 
-func (p *Player) CanWinFight(attackType AttackType, monster internal.Monster) bool {
+func (p *Player) CanWinFight(attackType models.AttackType, monster models.Monster) bool {
 	//check equipment and consumables to determine health + attack
 	monsterDmg := calculateAttackDamage(monster.AttackDmg, p.Data().DefenseStats[monster.AttackType])
 	playerDmg := calculateAttackDamage(p.Data().AttackStats[attackType], monster.Resistances[attackType])
@@ -316,4 +320,8 @@ func (p *Player) CanWinFight(attackType AttackType, monster internal.Monster) bo
 
 func waitForCooldown(expiration time.Time) {
 	time.Sleep(time.Until(expiration))
+}
+
+func waitForCooldownSeconds(seconds int) {
+	time.Sleep(time.Duration(seconds) * time.Second)
 }

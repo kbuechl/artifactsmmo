@@ -3,10 +3,16 @@ package commands
 type Action int
 
 const (
+	PlayerStartedCode = -1
+)
+
+const (
 	MoveAction Action = iota
 	GatherAction
 	FightAction
 	DepositAction
+	AcceptTask
+	CompleteTask
 )
 
 // todo: turn this into a closure to execute on the player, we can then chain them together and handle a bit cleaner in a loop
