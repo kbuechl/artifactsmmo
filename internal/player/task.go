@@ -1,10 +1,16 @@
 package player
 
 import (
+	"artifactsmmo/internal/models"
 	"github.com/promiseofcake/artifactsmmo-go-client/client"
+	"net/http"
 )
 
-func (p *Player) AcceptNewTask() (*PlayerTask, int) {
+func (p *Player) AcceptNewTask(tile models.MapTile) (*PlayerTask, int) {
+	if code := p.move(tile.X, tile.Y); code != http.StatusOK {
+		return nil, code
+	}
+
 	p.logger.Debug("getting new task for player" + p.Name)
 	resp, err := p.client.ActionAcceptNewTaskMyNameActionTaskNewPostWithResponse(p.ctx, p.Name)
 	if err != nil {
@@ -20,7 +26,10 @@ func (p *Player) AcceptNewTask() (*PlayerTask, int) {
 	return p.Data().Task, resp.StatusCode()
 }
 
-func (p *Player) CompleteTask() (*client.TaskRewardSchema, int) {
+func (p *Player) CompleteTask(tile models.MapTile) (*client.TaskRewardSchema, int) {
+	if code := p.move(tile.X, tile.Y); code != http.StatusOK {
+		return nil, code
+	}
 	p.logger.Debug("completing task for player" + p.Name)
 	resp, err := p.client.ActionCompleteTaskMyNameActionTaskCompletePostWithResponse(p.ctx, p.Name)
 	if err != nil {
@@ -35,7 +44,10 @@ func (p *Player) CompleteTask() (*client.TaskRewardSchema, int) {
 	return &resp.JSON200.Data.Reward, resp.StatusCode()
 }
 
-func (p *Player) ExchangeTaskCoins() (*client.TaskRewardSchema, int) {
+func (p *Player) ExchangeTaskCoins(tile models.MapTile) (*client.TaskRewardSchema, int) {
+	if code := p.move(tile.X, tile.Y); code != http.StatusOK {
+		return nil, code
+	}
 	resp, err := p.client.ActionTaskExchangeMyNameActionTaskExchangePostWithResponse(p.ctx, p.Name)
 
 	if err != nil {

@@ -1,40 +1,42 @@
 package commands
 
+import (
+	"artifactsmmo/internal/player"
+)
+
 type Action int
 
 const (
 	PlayerStartedCode = -1
 )
 
-const (
-	MoveAction Action = iota
-	GatherAction
-	FightAction
-	DepositAction
-	AcceptTask
-	CompleteTask
-)
-
-// todo: turn this into a closure to execute on the player, we can then chain them together and handle a bit cleaner in a loop
-type Response struct {
-	Name   string
-	Action Action
-	Code   int
-}
+type StopStepFn func(p *player.Player) bool
+type ExecuteStepFn func(p *player.Player) (int, error)
 
 type Command struct {
 	Steps []Step
 }
 
-type Step struct {
-	Action Action
-	Data   any
+type Step interface {
+	Stop(p *player.Player) bool
+	Execute(p *player.Player) (int, error)
 }
 
-func NewCommand(action Action, data any) *Command {
-	return &Command{Steps: []Step{{Action: action, Data: data}}}
+type Stepper struct {
+	StopFn    StopStepFn
+	ExecuteFn ExecuteStepFn
 }
 
-func (c *Command) AddStep(action Action, data any) {
-	c.Steps = append(c.Steps, Step{Action: action, Data: data})
+func (s *Stepper) Execute(p *player.Player) (int, error) {
+	return s.ExecuteFn(p)
+}
+
+func (s *Stepper) Stop(p *player.Player) bool {
+	return s.StopFn(p)
+}
+
+type CommandResponse struct {
+	Name  string
+	Error error
+	Code  int
 }
