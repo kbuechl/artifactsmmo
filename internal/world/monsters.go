@@ -40,6 +40,7 @@ func (w *Collector) loadMonsters() error {
 	return nil
 }
 
+// FilterMonsters gets a slice of monsters the player can kill
 func (w *Collector) FilterMonsters(p *player.Player) []models.Monster {
 	//todo: later we can select the right weapons and stuff for now lets use what we have
 	var skill models.AttackType
@@ -51,7 +52,7 @@ func (w *Collector) FilterMonsters(p *player.Player) []models.Monster {
 		}
 	}
 
-	w.logger.Debug("top skill for monster filter", skill, skillDmg)
+	w.logger.Debug("top skill for monster filter", "skill", skill, "dmg", skillDmg)
 
 	monsters := make([]models.Monster, 0)
 	for _, m := range w.Monsters {
@@ -61,4 +62,13 @@ func (w *Collector) FilterMonsters(p *player.Player) []models.Monster {
 	}
 
 	return monsters
+}
+
+func (w *Collector) GetMonster(code string) *models.Monster {
+	for _, m := range w.Monsters {
+		if m.Code == code {
+			return &m
+		}
+	}
+	return nil
 }

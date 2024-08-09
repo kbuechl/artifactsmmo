@@ -55,7 +55,7 @@ func (w *Collector) updateMap(ctx context.Context) ([]models.MapTile, error) {
 			return nil, fmt.Errorf("error fetching map resources: %w", err)
 		}
 		if resp.StatusCode() != http.StatusOK {
-			return nil, fmt.Errorf("error fetching map resources: %w", resp.Status())
+			return nil, fmt.Errorf("error fetching map resources: %s", resp.Status())
 		}
 		data = append(data, resp.JSON200.Data...)
 

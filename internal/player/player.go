@@ -20,8 +20,8 @@ type Player struct {
 	mu          sync.RWMutex
 	ctx         context.Context
 	client      *client.ClientWithResponses
-	engineChan  chan commands.Response
-	In          chan *commands.Command
+	engineChan  chan commands.CommandResponse
+	In          chan commands.Command
 	logger      *slog.Logger
 	bankChannel chan models.BankResponse
 	errChan     chan error
@@ -52,15 +52,20 @@ type PlayerData struct {
 	DefenseStats map[models.AttackType]int
 }
 
+type playerResponse struct {
+	Code  int
+	Error error
+}
+
 // Player is the character abstraction from the engine.
-func NewPlayer(ctx context.Context, name string, client *client.ClientWithResponses, rc chan commands.Response, bc chan models.BankResponse, errChan chan error) *Player {
+func NewPlayer(ctx context.Context, name string, client *client.ClientWithResponses, rc chan commands.CommandResponse, bc chan models.BankResponse, errChan chan error) *Player {
 	logger := slog.Default().With("player", name)
 	p := &Player{
 		Name:        name,
 		client:      client,
 		ctx:         ctx,
 		engineChan:  rc,
-		In:          make(chan *commands.Command),
+		In:          make(chan commands.Command),
 		logger:      logger,
 		bankChannel: bc,
 		errChan:     errChan,
@@ -78,55 +83,37 @@ func (p *Player) start() {
 	}
 
 	//send initial command to tell eng online
-	p.engineChan <- commands.Response{Name: p.Name, Code: commands.PlayerStartedCode}
+	p.engineChan <- commands.CommandResponse{Name: p.Name, Code: commands.PlayerStartedCode}
 
 	for {
 		select {
 		case <-p.ctx.Done():
 			return
 		case cmd := <-p.In:
-			p.engineChan <- p.handleCommand(cmd)
+			r := p.processCommand(cmd)
+			p.engineChan <- commands.CommandResponse{Name: p.Name, Error: r.Error, Code: r.Code}
 		default:
 			//loop
 		}
 	}
 }
 
-// handleCommand will handle a command from the engine, the steps are followed in order unless a non 200 response is given, when that happens
-// we return the action and the code so the engine can decide the next steps.
-// Players are responsible for handling cooldowns before moving onto the next step
-func (p *Player) handleCommand(cmd *commands.Command) commands.Response {
-	resp := commands.Response{Name: p.Name}
-	for _, step := range cmd.Steps {
-		switch step.Action {
-		case commands.MoveAction:
-			tile, ok := step.Data.(*models.MapTile)
-			if !ok {
-				//todo: need to handle errors better
-				panic("could not cast tile to MapTile")
+func (p *Player) processCommand(cmd commands.Command) *playerResponse {
+	for _, s := range cmd.Steps {
+	loop:
+		for {
+			if code, err := s.Execute(p); err != nil {
+				return &playerResponse{
+					Code:  code,
+					Error: err,
+				}
 			}
-			resp.Code = p.Move(tile.X, tile.Y)
-		case commands.GatherAction:
-			resp.Code = p.Gather()
-		case commands.DepositAction:
-			resp.Code = p.DepositInventory()
-		case commands.AcceptTask:
-			_, resp.Code = p.AcceptNewTask()
-		case commands.CompleteTask:
-			_, resp.Code = p.CompleteTask()
-		case commands.FightAction:
-			resp.Code = p.Fight()
-		default:
-			//todo: dont panic
-			panic(fmt.Sprintf("unknown action: %v", step.Action))
-		}
-		resp.Action = step.Action
-		if resp.Code != http.StatusOK {
-			break //stop processing and report it back to the engine for next steps
+			if s.Stop(p) {
+				break loop
+			}
 		}
 	}
-
-	return resp
+	return nil
 }
 
 func (p *Player) Data() PlayerData {
@@ -135,10 +122,9 @@ func (p *Player) Data() PlayerData {
 	return p.data
 }
 
-func (p *Player) Move(x, y int) int {
+func (p *Player) move(x, y int) int {
 	curX, curY := p.Pos()
 	if curX == x && curY == y {
-		p.logger.Debug("character already at position")
 		return 200
 	}
 	p.logger.Debug("moving character to position")
@@ -159,7 +145,12 @@ func (p *Player) Move(x, y int) int {
 	return resp.StatusCode()
 }
 
-func (p *Player) Gather() int {
+func (p *Player) Gather(tile models.MapTile) int {
+	if code := p.move(tile.X, tile.Y); code != http.StatusOK {
+		p.logger.Warn("Could not move to gather", slog.Group("code", code))
+		return code
+	}
+
 	p.logger.Debug("gathering")
 	resp, err := p.client.ActionGatheringMyNameActionGatheringPostWithResponse(p.ctx, p.Name)
 	if err != nil {
@@ -191,19 +182,24 @@ func (p *Player) getData() error {
 	return nil
 }
 
-func (p *Player) DepositInventory() int {
+func (p *Player) DepositInventory(tile models.MapTile) int {
+	if code := p.move(tile.X, tile.Y); code != http.StatusOK {
+		p.logger.Warn("Could not move to deposit inventory", slog.Group("code", code))
+		return code
+	}
 	p.logger.Debug("depositing inventory")
 	var code int
 	for _, i := range p.Data().Inventory {
 		if i.Quantity > 0 {
-			code = p.DepositItem(i.Code, i.Quantity)
+			code = p.depositItem(i.Code, i.Quantity)
 		}
 	}
 	p.logger.Debug("depositing inventory complete")
 	return code
 }
 
-func (p *Player) DepositItem(code string, qty int) int {
+// depositItem is meant to be called when the player is already at the bank, If a use case comes up where the player needs to deposit a single item we will need to refactor
+func (p *Player) depositItem(code string, qty int) int {
 
 	resp, err := p.client.ActionDepositBankMyNameActionBankDepositPostWithResponse(p.ctx, p.Name, client.ActionDepositBankMyNameActionBankDepositPostJSONRequestBody{
 		Code:     code,
@@ -277,13 +273,12 @@ func (p *Player) UpdateData(s client.CharacterSchema) {
 	}
 	p.mu.Unlock()
 
-	if expiration, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0(); err != nil {
-		panic(err)
-	} else if expiration.After(time.Now()) {
-		//waitForCooldown(expiration) //todo: there is an issue here with expiration expiring slightly before
+	//temporary while we cant use expiration for fighting due to early timeout
+	if cd, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0(); err != nil {
+		waitForCooldownSeconds(s.Cooldown)
+	} else if cd.After(time.Now()) {
 		waitForCooldownSeconds(s.Cooldown)
 	}
-
 }
 
 func (p *Player) InventoryCapacity() int {
@@ -298,20 +293,24 @@ func (p *Player) InventoryCapacity() int {
 	return c
 }
 
-func (p *Player) Fight() int {
+func (p *Player) Fight(tile models.MapTile) (bool, int) {
+	if code := p.move(tile.X, tile.Y); code != http.StatusOK {
+		p.logger.Warn("Could not move to fight", slog.Group("code", code))
+		return false, code
+	}
 	resp, err := p.client.ActionFightMyNameActionFightPostWithResponse(p.ctx, p.Name)
 	if err != nil {
 		p.logger.Debug("fight error", "error", err)
 	}
 	if resp.StatusCode() != 200 {
 		p.logger.Debug("got non 200 status from fight", "code", resp.StatusCode())
-		return resp.StatusCode()
+		return false, resp.StatusCode()
 	}
 
 	p.logger.Debug("fight result", "result", resp.JSON200.Data.Fight.Result, "turns", resp.JSON200.Data.Fight.Turns)
 	p.UpdateData(resp.JSON200.Data.Character)
 
-	return resp.StatusCode()
+	return resp.JSON200.Data.Fight.Result == "win", resp.StatusCode()
 }
 
 func (p *Player) CanWinFight(attackType models.AttackType, monster models.Monster) bool {
@@ -320,10 +319,22 @@ func (p *Player) CanWinFight(attackType models.AttackType, monster models.Monste
 	playerDmg := calculateAttackDamage(p.Data().AttackStats[attackType], monster.Resistances[attackType])
 
 	//if we pass 100 turns we auto lose
-	if monster.Hp/playerDmg > maxFightRounds || monster.Hp/playerDmg < p.Data().Hp/monsterDmg {
+	if monster.Hp/playerDmg > maxFightRounds || monster.Hp/playerDmg > p.Data().Hp/monsterDmg {
 		return false
 	}
 	return true
+}
+
+func (p *Player) CheckInventory(code string) int {
+	count := 0
+
+	for _, i := range p.Data().Inventory {
+		if i.Code == code {
+			count += i.Quantity
+		}
+	}
+
+	return count
 }
 
 func waitForCooldown(expiration time.Time) {

@@ -133,11 +133,11 @@ func (w *Collector) UpdateBankGold(q int) {
 	w.bankGold = q
 }
 
-func (w *Collector) GetResourceByName(name string) (*Resource, error) {
+func (w *Collector) GetResourceByName(name string) *Resource {
 	if r, ok := w.Resources[name]; ok {
-		return &r, nil
+		return &r
 	}
-	return nil, fmt.Errorf("resource not found: %s", name)
+	return nil
 }
 
 // GetResourcesBySkill filters out resources based on the skill and the current skill level, ordered by level desc

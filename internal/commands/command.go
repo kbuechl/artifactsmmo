@@ -1,40 +1,54 @@
 package commands
 
+import (
+	"artifactsmmo/internal/models"
+	"github.com/promiseofcake/artifactsmmo-go-client/client"
+)
+
 type Action int
 
 const (
 	PlayerStartedCode = -1
 )
 
-const (
-	MoveAction Action = iota
-	GatherAction
-	FightAction
-	DepositAction
-	AcceptTask
-	CompleteTask
-)
-
-// todo: turn this into a closure to execute on the player, we can then chain them together and handle a bit cleaner in a loop
-type Response struct {
-	Name   string
-	Action Action
-	Code   int
+type Player interface {
+	CheckInventory(code string) int
+	Gather(tile models.MapTile) int
+	Fight(tile models.MapTile) (bool, int)
+	DepositInventory(tile models.MapTile) int
+	InventoryCapacity() int
+	AcceptNewTask(tile models.MapTile) int
+	CompleteTask(tile models.MapTile) (*client.TaskRewardSchema, int)
+	ExchangeTaskCoins(tile models.MapTile) (*client.TaskRewardSchema, int)
 }
+
+type StopStepFn func(p Player) bool
+type ExecuteStepFn func(p Player) (int, error)
 
 type Command struct {
 	Steps []Step
 }
 
-type Step struct {
-	Action Action
-	Data   any
+type Step interface {
+	Stop(p Player) bool
+	Execute(p Player) (int, error)
 }
 
-func NewCommand(action Action, data any) *Command {
-	return &Command{Steps: []Step{{Action: action, Data: data}}}
+type Stepper struct {
+	StopFn    StopStepFn
+	ExecuteFn ExecuteStepFn
 }
 
-func (c *Command) AddStep(action Action, data any) {
-	c.Steps = append(c.Steps, Step{Action: action, Data: data})
+func (s *Stepper) Execute(p Player) (int, error) {
+	return s.ExecuteFn(p)
+}
+
+func (s *Stepper) Stop(p Player) bool {
+	return s.StopFn(p)
+}
+
+type CommandResponse struct {
+	Name  string
+	Error error
+	Code  int
 }
