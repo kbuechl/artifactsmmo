@@ -52,7 +52,7 @@ func (w *Collector) FilterMonsters(p *player.Player) []models.Monster {
 		}
 	}
 
-	w.logger.Debug("top skill for monster filter", skill, skillDmg)
+	w.logger.Debug("top skill for monster filter", "skill", skill, "dmg", skillDmg)
 
 	monsters := make([]models.Monster, 0)
 	for _, m := range w.Monsters {
