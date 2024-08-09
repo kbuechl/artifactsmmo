@@ -125,7 +125,6 @@ func (p *Player) Data() PlayerData {
 func (p *Player) move(x, y int) int {
 	curX, curY := p.Pos()
 	if curX == x && curY == y {
-		p.logger.Debug("character already at position")
 		return 200
 	}
 	p.logger.Debug("moving character to position")
@@ -274,17 +273,12 @@ func (p *Player) UpdateData(s client.CharacterSchema) {
 	}
 	p.mu.Unlock()
 
-	var cooldown time.Time
-	newCooldown, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0()
-	if err != nil {
-		p.logger.Warn("could not unmarshal cooldown expiration", slog.Group("error", err))
-		cooldown = time.Now().Add(time.Duration(s.Cooldown) * time.Second)
-	} else if newCooldown.After(time.Now()) {
-		//waitForCooldownSeconds(s.Cooldown)
-		cooldown = newCooldown
+	//temporary while we cant use expiration for fighting due to early timeout
+	if cd, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0(); err != nil {
+		waitForCooldownSeconds(s.Cooldown)
+	} else if cd.After(time.Now()) {
+		waitForCooldownSeconds(s.Cooldown)
 	}
-
-	waitForCooldown(cooldown) //fight was ending early here so this might not work with cooldown expiration, seconds does work however
 }
 
 func (p *Player) InventoryCapacity() int {
@@ -325,7 +319,7 @@ func (p *Player) CanWinFight(attackType models.AttackType, monster models.Monste
 	playerDmg := calculateAttackDamage(p.Data().AttackStats[attackType], monster.Resistances[attackType])
 
 	//if we pass 100 turns we auto lose
-	if monster.Hp/playerDmg > maxFightRounds || monster.Hp/playerDmg < p.Data().Hp/monsterDmg {
+	if monster.Hp/playerDmg > maxFightRounds || monster.Hp/playerDmg > p.Data().Hp/monsterDmg {
 		return false
 	}
 	return true

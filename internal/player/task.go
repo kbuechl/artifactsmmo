@@ -6,9 +6,9 @@ import (
 	"net/http"
 )
 
-func (p *Player) AcceptNewTask(tile models.MapTile) (*PlayerTask, int) {
+func (p *Player) AcceptNewTask(tile models.MapTile) int {
 	if code := p.move(tile.X, tile.Y); code != http.StatusOK {
-		return nil, code
+		return code
 	}
 
 	p.logger.Debug("getting new task for player" + p.Name)
@@ -17,13 +17,13 @@ func (p *Player) AcceptNewTask(tile models.MapTile) (*PlayerTask, int) {
 		panic(err)
 	}
 	if resp.StatusCode() != 200 {
-		return nil, resp.StatusCode()
+		return resp.StatusCode()
 	}
 
 	p.logger.Info("got new task", "task", resp.JSON200.Data.Task)
 	p.UpdateData(resp.JSON200.Data.Character)
 
-	return p.Data().Task, resp.StatusCode()
+	return resp.StatusCode()
 }
 
 func (p *Player) CompleteTask(tile models.MapTile) (*client.TaskRewardSchema, int) {

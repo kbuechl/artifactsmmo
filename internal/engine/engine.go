@@ -2,6 +2,7 @@ package engine
 
 import (
 	"artifactsmmo/internal/commands"
+	"artifactsmmo/internal/models"
 	"artifactsmmo/internal/player"
 	"artifactsmmo/internal/world"
 	"context"
@@ -121,11 +122,11 @@ func (e *GameEngine) generatePlayerCommand(resp commands.CommandResponse, player
 			return e.newGatherStep(task.Code, task.Total-task.Progress, player)
 		case "monsters":
 			monster := e.world.GetMonster(task.Code)
-			if monster != nil {
-				return nil, fmt.Errorf("cannot find monster tile for: %s", task.Code)
+			if monster == nil {
+				return nil, fmt.Errorf("cannot find monster for: %s", task.Code)
 			}
 
-			if player.CanWinFight("earth", *monster) {
+			if player.CanWinFight(models.Earth, *monster) {
 				return e.newFightStep(task.Code, task.Total-task.Progress, player)
 			}
 			e.logger.Info("cannot win fight for given task, skipping task", "player", player.Name, "monster", task.Code)
@@ -137,23 +138,15 @@ func (e *GameEngine) generatePlayerCommand(resp commands.CommandResponse, player
 				e.logger.Warn("unmapped task type", "type", player.Data().Task.Type)
 				//for now just prioritize lowest skill to mine
 				pData := player.Data()
-				minSkill := ""
-				for skill, lvl := range pData.Skills {
-					if minSkill == "" {
-						minSkill = skill
-						continue
-					}
-					if lvl < pData.Skills[minSkill] {
-						minSkill = skill
-					}
-				}
-				resources := e.world.GetResourcesBySkill(minSkill, pData.Skills[minSkill])
+
+				skill := []string{models.WoodcuttingSkill, models.FishingSkill, models.MiningSkill}[rand.Intn(2)]
+				resources := e.world.GetResourcesBySkill(skill, pData.Skills[skill])
 
 				if len(resources) == 0 {
-					panic(fmt.Sprintf("no resources found for skill %s", minSkill))
+					panic(fmt.Sprintf("no resources found for skill %s", skill))
 				}
 
-				return e.newGatherStep(resources[0].Name, rand.Intn(25)+1, player)
+				return e.newGatherStep(resources[0].Code, rand.Intn(25)+1, player)
 			} else {
 				//temp code, fight random monster
 				monsters := e.world.FilterMonsters(player)
@@ -201,7 +194,7 @@ func (e *GameEngine) newDepositStep() (commands.Step, error) {
 	if len(tiles) == 0 {
 		return nil, fmt.Errorf("could not find bank")
 	}
-	return newDepositInventoryStep(*tiles[0]), nil
+	return commands.NewDepositInventoryStep(*tiles[0]), nil
 }
 
 func (e *GameEngine) newGatherStep(resourceCode string, qty int, player *player.Player) (commands.Step, error) {
@@ -213,7 +206,7 @@ func (e *GameEngine) newGatherStep(resourceCode string, qty int, player *player.
 		return nil, fmt.Errorf("could not find tile for resource code %s", resourceCode)
 	}
 
-	return newGatherStep(qty, *tile), nil
+	return commands.NewGatherStep(qty, *tile), nil
 }
 
 // todo: is this how we want to handle game loop errors?
@@ -236,7 +229,7 @@ func (e *GameEngine) newFightStep(monster string, qty int, player *player.Player
 		return nil, fmt.Errorf("could not find tile for monster %s", monster)
 	}
 
-	return newFightStep(qty, *tile), nil
+	return commands.NewFightStep(qty, *tile), nil
 }
 
 func (e *GameEngine) newAcceptTaskStep() (commands.Step, error) {
@@ -244,7 +237,7 @@ func (e *GameEngine) newAcceptTaskStep() (commands.Step, error) {
 	if len(tiles) == 0 {
 		return nil, fmt.Errorf("could not find task master")
 	}
-	return newAcceptTaskStep(*tiles[0]), nil
+	return commands.NewAcceptTaskStep(*tiles[0]), nil
 }
 
 func (e *GameEngine) newCompleteTaskStep() (commands.Step, error) {
@@ -253,5 +246,5 @@ func (e *GameEngine) newCompleteTaskStep() (commands.Step, error) {
 		return nil, fmt.Errorf("could not find task master")
 	}
 
-	return newCompleteTaskStep(*tiles[0]), nil
+	return commands.NewCompleteTaskStep(*tiles[0]), nil
 }

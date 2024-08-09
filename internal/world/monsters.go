@@ -64,9 +64,9 @@ func (w *Collector) FilterMonsters(p *player.Player) []models.Monster {
 	return monsters
 }
 
-func (w *Collector) GetMonster(name string) *models.Monster {
+func (w *Collector) GetMonster(code string) *models.Monster {
 	for _, m := range w.Monsters {
-		if m.Name == name {
+		if m.Code == code {
 			return &m
 		}
 	}

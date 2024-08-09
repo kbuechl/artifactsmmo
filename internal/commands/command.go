@@ -1,7 +1,8 @@
 package commands
 
 import (
-	"artifactsmmo/internal/player"
+	"artifactsmmo/internal/models"
+	"github.com/promiseofcake/artifactsmmo-go-client/client"
 )
 
 type Action int
@@ -10,16 +11,27 @@ const (
 	PlayerStartedCode = -1
 )
 
-type StopStepFn func(p *player.Player) bool
-type ExecuteStepFn func(p *player.Player) (int, error)
+type Player interface {
+	CheckInventory(code string) int
+	Gather(tile models.MapTile) int
+	Fight(tile models.MapTile) (bool, int)
+	DepositInventory(tile models.MapTile) int
+	InventoryCapacity() int
+	AcceptNewTask(tile models.MapTile) int
+	CompleteTask(tile models.MapTile) (*client.TaskRewardSchema, int)
+	ExchangeTaskCoins(tile models.MapTile) (*client.TaskRewardSchema, int)
+}
+
+type StopStepFn func(p Player) bool
+type ExecuteStepFn func(p Player) (int, error)
 
 type Command struct {
 	Steps []Step
 }
 
 type Step interface {
-	Stop(p *player.Player) bool
-	Execute(p *player.Player) (int, error)
+	Stop(p Player) bool
+	Execute(p Player) (int, error)
 }
 
 type Stepper struct {
@@ -27,11 +39,11 @@ type Stepper struct {
 	ExecuteFn ExecuteStepFn
 }
 
-func (s *Stepper) Execute(p *player.Player) (int, error) {
+func (s *Stepper) Execute(p Player) (int, error) {
 	return s.ExecuteFn(p)
 }
 
-func (s *Stepper) Stop(p *player.Player) bool {
+func (s *Stepper) Stop(p Player) bool {
 	return s.StopFn(p)
 }
 
