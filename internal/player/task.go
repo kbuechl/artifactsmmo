@@ -11,7 +11,7 @@ func (p *Player) AcceptNewTask(tile models.MapTile) int {
 		return code
 	}
 
-	p.logger.Debug("getting new task for player" + p.Name)
+	p.logger.Debug("getting new task")
 	resp, err := p.client.ActionAcceptNewTaskMyNameActionTaskNewPostWithResponse(p.ctx, p.Name)
 	if err != nil {
 		panic(err)
@@ -30,7 +30,7 @@ func (p *Player) CompleteTask(tile models.MapTile) (*client.TaskRewardSchema, in
 	if code := p.move(tile.X, tile.Y); code != http.StatusOK {
 		return nil, code
 	}
-	p.logger.Debug("completing task for player" + p.Name)
+	p.logger.Debug("completing task")
 	resp, err := p.client.ActionCompleteTaskMyNameActionTaskCompletePostWithResponse(p.ctx, p.Name)
 	if err != nil {
 		panic(err)
@@ -38,7 +38,7 @@ func (p *Player) CompleteTask(tile models.MapTile) (*client.TaskRewardSchema, in
 	if resp.StatusCode() != 200 {
 		return nil, resp.StatusCode()
 	}
-	p.logger.Info("completed task for player"+p.Name, "reward", resp.JSON200.Data.Reward)
+	p.logger.Info("completed task", "reward", resp.JSON200.Data.Reward)
 	p.UpdateData(resp.JSON200.Data.Character)
 
 	return &resp.JSON200.Data.Reward, resp.StatusCode()

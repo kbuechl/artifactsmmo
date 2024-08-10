@@ -7,6 +7,7 @@ import (
 	"artifactsmmo/internal/world"
 	"context"
 	"fmt"
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/promiseofcake/artifactsmmo-go-client/client"
 	"github.com/sagikazarmark/slog-shim"
 	"math/rand"
@@ -34,10 +35,32 @@ type GameConfig struct {
 func NewGameEngine(ctx context.Context, cfg GameConfig) (*GameEngine, error) {
 	gameCtx, cancel := context.WithCancel(ctx)
 
-	c, err := client.NewClientWithResponses(cfg.URL, client.WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
-		req.Header.Add("Authorization", "Bearer "+cfg.Token)
-		return nil
-	}))
+	retryClient := retryablehttp.NewClient()
+
+	retryClient.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+		shouldRetry, checkErr := retryablehttp.DefaultRetryPolicy(ctx, resp, err)
+		if shouldRetry || checkErr != nil {
+			return shouldRetry, err
+		}
+
+		switch resp.StatusCode {
+		case 461:
+			//transaction already in progress with this at bank
+			return true, nil
+		case 486:
+			//character locked, action in progress
+			return true, nil
+		case 499:
+			//character in cooldown, shouldnt happen because we wait but can be retried
+			return true, nil
+		}
+		return false, nil
+	}
+
+	c, err := client.NewClientWithResponses(cfg.URL,
+		client.WithRequestEditorFn(client.NewBearerAuthorizationRequestFunc(cfg.Token)),
+		client.WithHTTPClient(retryClient.HTTPClient),
+	)
 
 	if err != nil {
 		cancel()
@@ -58,7 +81,7 @@ func NewGameEngine(ctx context.Context, cfg GameConfig) (*GameEngine, error) {
 		errChan:   make(chan error),
 		Out:       make(chan error),
 		players:   map[string]*player.Player{},
-		logger:    slog.Default().With("runner", "engine"),
+		logger:    slog.Default().With("source", "engine"),
 		playerErr: make(chan error),
 	}
 
@@ -134,7 +157,7 @@ func (e *GameEngine) generatePlayerCommand(resp commands.CommandResponse, player
 		default:
 			//todo: this default logic is temporary
 			//temporarily use 50/50 chance to fight random or gather some resource
-			if rand.Intn(1) == 0 { //resource gather
+			if rand.Int()%2 == 0 { //resource gather
 				e.logger.Warn("unmapped task type", "type", player.Data().Task.Type)
 				//for now just prioritize lowest skill to mine
 				pData := player.Data()
@@ -146,7 +169,7 @@ func (e *GameEngine) generatePlayerCommand(resp commands.CommandResponse, player
 					panic(fmt.Sprintf("no resources found for skill %s", skill))
 				}
 
-				return e.newGatherStep(resources[0].Code, rand.Intn(25)+1, player)
+				return e.newGatherStep(resources[0].Code, rand.Intn(9)+1, player)
 			} else {
 				//temp code, fight random monster
 				monsters := e.world.FilterMonsters(player)
@@ -160,7 +183,7 @@ func (e *GameEngine) generatePlayerCommand(resp commands.CommandResponse, player
 				}
 				m := monsters[i]
 
-				return e.newFightStep(m.Code, rand.Intn(25)+1, player)
+				return e.newFightStep(m.Code, rand.Intn(9)+1, player)
 			}
 
 		}

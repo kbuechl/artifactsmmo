@@ -8,6 +8,7 @@ import (
 	"github.com/promiseofcake/artifactsmmo-go-client/client"
 	"github.com/sagikazarmark/slog-shim"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -59,7 +60,7 @@ type playerResponse struct {
 
 // Player is the character abstraction from the engine.
 func NewPlayer(ctx context.Context, name string, client *client.ClientWithResponses, rc chan commands.CommandResponse, bc chan models.BankResponse, errChan chan error) *Player {
-	logger := slog.Default().With("player", name)
+	logger := slog.Default().With("source", name)
 	p := &Player{
 		Name:        name,
 		client:      client,
@@ -151,7 +152,7 @@ func (p *Player) Gather(tile models.MapTile) int {
 		return code
 	}
 
-	p.logger.Debug("gathering")
+	p.logger.Debug("gathering", "resource", tile.Code)
 	resp, err := p.client.ActionGatheringMyNameActionGatheringPostWithResponse(p.ctx, p.Name)
 	if err != nil {
 		p.logger.Debug("error gathering characters: %v", err)
@@ -307,7 +308,7 @@ func (p *Player) Fight(tile models.MapTile) (bool, int) {
 		return false, resp.StatusCode()
 	}
 
-	p.logger.Debug("fight result", "result", resp.JSON200.Data.Fight.Result, "turns", resp.JSON200.Data.Fight.Turns)
+	p.logger.Debug("fight result", "result", resp.JSON200.Data.Fight.Result, "turns", resp.JSON200.Data.Fight.Turns, "monster", tile.Code)
 	p.UpdateData(resp.JSON200.Data.Character)
 
 	return resp.JSON200.Data.Fight.Result == "win", resp.StatusCode()
@@ -315,6 +316,9 @@ func (p *Player) Fight(tile models.MapTile) (bool, int) {
 
 func (p *Player) CanWinFight(attackType models.AttackType, monster models.Monster) bool {
 	//check equipment and consumables to determine health + attack
+	if strings.HasSuffix(monster.Code, "_slime") {
+		return false //hack: calculations are wrong need to fix
+	}
 	monsterDmg := calculateAttackDamage(monster.AttackDmg, p.Data().DefenseStats[monster.AttackType])
 	playerDmg := calculateAttackDamage(p.Data().AttackStats[attackType], monster.Resistances[attackType])
 
