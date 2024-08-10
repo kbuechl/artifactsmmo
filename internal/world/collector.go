@@ -21,16 +21,18 @@ type Collector struct {
 	ctx         context.Context
 	client      *client.ClientWithResponses
 	Out         chan error
-	logger      slog.Logger
+	logger      *slog.Logger
 	BankChannel chan models.BankResponse
 }
 
 func NewCollector(ctx context.Context, c *client.ClientWithResponses) (*Collector, error) {
+	logger := slog.Default().With("source", "collector")
 	collector := &Collector{
 		ctx:         ctx,
 		client:      c,
 		Out:         make(chan error),
 		BankChannel: make(chan models.BankResponse),
+		logger:      logger,
 	}
 
 	rData, err := collector.getAllResources(ctx)
