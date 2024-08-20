@@ -275,11 +275,11 @@ func (p *Player) UpdateData(s client.CharacterSchema) {
 	p.mu.Unlock()
 
 	//temporary while we cant use expiration for fighting due to early timeout
-	if cd, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0(); err != nil {
-		waitForCooldownSeconds(s.Cooldown)
-	} else if cd.After(time.Now()) {
-		waitForCooldownSeconds(s.Cooldown)
-	}
+	// if cd, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0(); err != nil {
+	// 	waitForCooldownSeconds(s.Cooldown)
+	// } else if cd.After(time.Now()) {
+	waitForCooldownSeconds(s.Cooldown)
+	// }
 }
 
 func (p *Player) InventoryCapacity() int {
