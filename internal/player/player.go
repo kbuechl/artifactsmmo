@@ -5,12 +5,12 @@ import (
 	"artifactsmmo/internal/models"
 	"context"
 	"fmt"
-	"github.com/promiseofcake/artifactsmmo-go-client/client"
-	"github.com/sagikazarmark/slog-shim"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/promiseofcake/artifactsmmo-go-client/client"
+	"github.com/sagikazarmark/slog-shim"
 )
 
 const maxFightRounds = 100
@@ -275,11 +275,11 @@ func (p *Player) UpdateData(s client.CharacterSchema) {
 	p.mu.Unlock()
 
 	//temporary while we cant use expiration for fighting due to early timeout
-	if cd, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0(); err != nil {
-		waitForCooldownSeconds(s.Cooldown)
-	} else if cd.After(time.Now()) {
-		waitForCooldownSeconds(s.Cooldown)
-	}
+	// if cd, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0(); err != nil {
+	// 	waitForCooldownSeconds(s.Cooldown)
+	// } else if cd.After(time.Now()) {
+	waitForCooldownSeconds(s.Cooldown)
+	// }
 }
 
 func (p *Player) InventoryCapacity() int {
@@ -315,15 +315,16 @@ func (p *Player) Fight(tile models.MapTile) (bool, int) {
 }
 
 func (p *Player) CanWinFight(attackType models.AttackType, monster models.Monster) bool {
-	//check equipment and consumables to determine health + attack
-	if strings.HasSuffix(monster.Code, "_slime") {
-		return false //hack: calculations are wrong need to fix
-	}
+	// Calculate the damage each entity deals
 	monsterDmg := calculateAttackDamage(monster.AttackDmg, p.Data().DefenseStats[monster.AttackType])
-	playerDmg := calculateAttackDamage(p.Data().AttackStats[attackType], monster.Resistances[attackType])
+	playerDmg := calculateAttackDamage(p.Data().AttackStats[monster.AttackType], monster.Resistances[monster.AttackType])
 
-	//if we pass 100 turns we auto lose
-	if monster.Hp/playerDmg > maxFightRounds || monster.Hp/playerDmg > p.Data().Hp/monsterDmg {
+	// Calculate how many turns each entity can take
+	playerTurns := float64(monster.Hp) / float64(playerDmg)
+	monsterTurns := float64(p.Data().Hp) / float64(monsterDmg)
+
+	// Determine the outcome
+	if playerTurns >= float64(maxFightRounds) || playerTurns >= monsterTurns {
 		return false
 	}
 	return true

@@ -9,8 +9,6 @@ func calculateElementDamage(attackBase int, dmg int) int {
 }
 
 func calculateAttackDamage(attack int, resistance int) int {
-	if resistance == 0 {
-		return attack
-	}
-	return int(math.Round(float64(attack) * ((1 - float64(resistance)) / 100)))
+	damageTaken := float64(attack) * (1 - float64(resistance)*0.01)
+	return int(math.Round(damageTaken))
 }
