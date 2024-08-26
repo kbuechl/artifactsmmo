@@ -97,7 +97,7 @@ func (w *Collector) LoadBankItems() error {
 		}
 
 		data = append(data, resp.JSON200.Data...)
-		if p, err := resp.JSON200.Pages.AsDataPageSimpleItemSchemaPages0(); err != nil {
+		if p, err := resp.JSON200.Page.AsDataPageSimpleItemSchemaPage0(); err != nil {
 			return fmt.Errorf("get all bank items: %w", err)
 		} else if page >= p {
 			break
