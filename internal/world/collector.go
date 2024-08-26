@@ -16,7 +16,7 @@ type Collector struct {
 	tiles       []models.MapTile
 	Monsters    []models.Monster
 	bankItems   []client.SimpleItemSchema
-	bankGold    int
+	bankDetails client.BankSchema
 	mu          sync.RWMutex
 	ctx         context.Context
 	client      *client.ClientWithResponses
@@ -33,7 +33,7 @@ func NewCollector(ctx context.Context, c *client.ClientWithResponses) (*Collecto
 		BankChannel: make(chan models.BankResponse),
 		logger:      slog.Default().With("source", "collector"),
 	}
-
+	collector.logger.Info("Loading World")
 	rData, err := collector.getAllResources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get all resources: %w", err)
@@ -48,7 +48,7 @@ func NewCollector(ctx context.Context, c *client.ClientWithResponses) (*Collecto
 		return nil, fmt.Errorf("load bank items: %w", err)
 	}
 
-	if err = collector.LoadBankGold(); err != nil {
+	if err = collector.LoadBankDetails(); err != nil {
 		return nil, fmt.Errorf("load bank gold: %w", err)
 	}
 
@@ -80,12 +80,14 @@ func (w *Collector) start() {
 }
 
 func (w *Collector) LoadBankItems() error {
+	w.logger.Info("Loading Bank Items")
 	data := make([]client.SimpleItemSchema, 0)
+	size := 100
 	for page := 1; ; page++ {
 		resp, err := w.client.GetBankItemsMyBankItemsGetWithResponse(w.ctx, &client.GetBankItemsMyBankItemsGetParams{
 			ItemCode: nil,
-			Page:     nil,
-			Size:     nil,
+			Page:     &page,
+			Size:     &size,
 		})
 		if err != nil {
 			return fmt.Errorf("get all bank items: %w", err)
@@ -97,7 +99,7 @@ func (w *Collector) LoadBankItems() error {
 		data = append(data, resp.JSON200.Data...)
 		if p, err := resp.JSON200.Pages.AsDataPageSimpleItemSchemaPages0(); err != nil {
 			return fmt.Errorf("get all bank items: %w", err)
-		} else if p == page {
+		} else if page >= p {
 			break
 		}
 	}
@@ -107,9 +109,9 @@ func (w *Collector) LoadBankItems() error {
 	return nil
 }
 
-func (w *Collector) LoadBankGold() error {
-
-	resp, err := w.client.GetBankGoldsMyBankGoldGetWithResponse(w.ctx)
+func (w *Collector) LoadBankDetails() error {
+	w.logger.Info("Loading Bank Details")
+	resp, err := w.client.GetBankDetailsMyBankGetWithResponse(w.ctx)
 	if err != nil {
 		return fmt.Errorf("get all bank items: %w", err)
 	}
@@ -117,9 +119,15 @@ func (w *Collector) LoadBankGold() error {
 		return fmt.Errorf("get all bank items: %d", resp.StatusCode())
 	}
 
-	w.UpdateBankGold(resp.JSON200.Data.Quantity)
+	w.UpdateBankDetails(resp.JSON200.Data)
 
 	return nil
+}
+
+func (w *Collector) UpdateBankGold(q int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.bankDetails.Gold = q
 }
 
 func (w *Collector) UpdateBankItems(schema []client.SimpleItemSchema) {
@@ -128,10 +136,10 @@ func (w *Collector) UpdateBankItems(schema []client.SimpleItemSchema) {
 	w.bankItems = schema
 }
 
-func (w *Collector) UpdateBankGold(q int) {
+func (w *Collector) UpdateBankDetails(details client.BankSchema) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.bankGold = q
+	w.bankDetails = details
 }
 
 func (w *Collector) GetResourceByName(name string) *Resource {
