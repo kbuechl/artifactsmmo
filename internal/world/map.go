@@ -61,7 +61,7 @@ func (w *Collector) updateMap(ctx context.Context) ([]models.MapTile, error) {
 
 		if p, pErr := resp.JSON200.Pages.AsDataPageMapSchemaPages0(); pErr != nil {
 			return nil, err
-		} else if p == page {
+		} else if page >= p {
 			break
 		}
 	}
@@ -88,6 +88,7 @@ func (w *Collector) MapTiles() []models.MapTile {
 }
 
 func (w *Collector) loadMapTiles() error {
+	w.logger.Info("Loading Map")
 	resp, err := w.updateMap(w.ctx)
 	if err != nil {
 		return fmt.Errorf("get all resources: %w", err)

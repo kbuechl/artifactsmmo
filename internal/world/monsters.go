@@ -9,6 +9,7 @@ import (
 )
 
 func (w *Collector) loadMonsters() error {
+	w.logger.Info("Loading Monsters")
 	data := make([]models.Monster, 0)
 
 	for page := 1; ; page++ {
@@ -16,7 +17,7 @@ func (w *Collector) loadMonsters() error {
 			MinLevel: nil,
 			MaxLevel: nil,
 			Drop:     nil,
-			Page:     nil,
+			Page:     &page,
 			Size:     nil,
 		})
 		if err != nil {
@@ -31,7 +32,7 @@ func (w *Collector) loadMonsters() error {
 
 		if p, pErr := resp.JSON200.Pages.AsDataPageMonsterSchemaPages0(); pErr != nil {
 			return fmt.Errorf("get all monsters: %w", pErr)
-		} else if p == page {
+		} else if page >= p {
 			break
 		}
 	}
