@@ -22,7 +22,7 @@ func (p *Player) createCharacter() error {
 		return err
 	}
 	if resp.StatusCode() != http.StatusOK {
-		return fmt.Errorf("CreateCharactersCreatePost returned %s", resp.Status)
+		return fmt.Errorf("CreateCharactersCreatePost returned %d", resp.StatusCode())
 	}
 
 	p.UpdateData(resp.JSON200.Data)
