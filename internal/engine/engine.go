@@ -150,6 +150,7 @@ func (e *GameEngine) generatePlayerCommand(resp commands.CommandResponse, player
 			}
 
 			if player.CanWinFight(models.Earth, *monster) {
+				//todo: can we add in the turn in task step here after the fight step since we know the task is done after this?
 				return e.newFightStep(task.Code, task.Total-task.Progress, player)
 			}
 			e.logger.Info("cannot win fight for given task, skipping task", "player", player.Name, "monster", task.Code)

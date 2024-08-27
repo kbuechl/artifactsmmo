@@ -105,7 +105,9 @@ func (p *Player) start() {
 		case <-p.ctx.Done():
 			return
 		case cmd := <-p.In:
+			p.logger.Debug("received command", "cmd steps", fmt.Sprintf("%s", cmd))
 			r := p.processCommand(cmd)
+			p.logger.Debug("result of command", "result", fmt.Sprintf("%v", r), "cmd steps", fmt.Sprintf("%s", cmd))
 			p.engineChan <- commands.CommandResponse{Name: p.Name, Error: r.Error, Code: r.Code}
 		default:
 			//loop
@@ -113,22 +115,27 @@ func (p *Player) start() {
 	}
 }
 
-func (p *Player) processCommand(cmd commands.Command) *playerResponse {
+func (p *Player) processCommand(cmd commands.Command) playerResponse {
+	var response playerResponse
 	for _, s := range cmd.Steps {
 	loop:
 		for {
-			if code, err := s.Execute(p); err != nil {
-				return &playerResponse{
-					Code:  code,
-					Error: err,
-				}
+			code, err := s.Execute(p)
+			response = playerResponse{
+				Code:  code,
+				Error: err,
+			}
+			//break out early if there is an error
+			if err != nil {
+				return response
 			}
 			if s.Stop(p) {
 				break loop
 			}
 		}
 	}
-	return nil
+	//return the last response we got in our loop when we are done
+	return response
 }
 
 func (p *Player) Data() PlayerData {

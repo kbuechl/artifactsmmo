@@ -3,6 +3,7 @@ package commands
 import (
 	"artifactsmmo/internal/models"
 	"github.com/promiseofcake/artifactsmmo-go-client/client"
+	"strings"
 )
 
 type Action int
@@ -29,14 +30,24 @@ type Command struct {
 	Steps []Step
 }
 
+func (c Command) String() string {
+	response := make([]string, len(c.Steps))
+	for _, step := range c.Steps {
+		response = append(response, step.String())
+	}
+	return strings.Join(response, ",")
+}
+
 type Step interface {
 	Stop(p Player) bool
 	Execute(p Player) (int, error)
+	String() string
 }
 
 type Stepper struct {
-	StopFn    StopStepFn
-	ExecuteFn ExecuteStepFn
+	StopFn      StopStepFn
+	ExecuteFn   ExecuteStepFn
+	Description string
 }
 
 func (s *Stepper) Execute(p Player) (int, error) {
@@ -45,6 +56,9 @@ func (s *Stepper) Execute(p Player) (int, error) {
 
 func (s *Stepper) Stop(p Player) bool {
 	return s.StopFn(p)
+}
+func (s *Stepper) String() string {
+	return s.Description
 }
 
 type CommandResponse struct {

@@ -10,6 +10,7 @@ func NewGatherStep(qty int, tile models.MapTile) Step {
 	g := struct{ *Stepper }{
 		Stepper: &Stepper{},
 	}
+	g.Description = fmt.Sprintf("Gather %d %s", qty, tile.Code)
 	g.StopFn = func(p Player) bool { return p.CheckInventory(tile.Code) >= qty }
 	g.ExecuteFn = func(p Player) (int, error) {
 		//todo: it would be great if we could deposit when gather returns a 497
@@ -28,6 +29,7 @@ func NewFightStep(qty int, tile models.MapTile) Step {
 		count:   0,
 		Stepper: &Stepper{},
 	}
+	f.Description = fmt.Sprintf("Fight %d %s", qty, tile.Code)
 	f.StopFn = func(p Player) bool { return f.count >= qty }
 	f.ExecuteFn = func(p Player) (int, error) {
 		win, code := p.Fight(tile)
@@ -49,6 +51,7 @@ func NewAcceptTaskStep(tile models.MapTile) Step {
 		Stepper: &Stepper{},
 	}
 
+	s.Description = "Accept Task"
 	s.StopFn = func(p Player) bool { return true }
 	s.ExecuteFn = func(p Player) (int, error) {
 		code := p.AcceptNewTask(tile)
@@ -69,7 +72,7 @@ func NewCompleteTaskStep(tile models.MapTile) Step {
 	}{
 		Stepper: &Stepper{},
 	}
-
+	s.Description = "Complete Task"
 	s.StopFn = func(p Player) bool { return true }
 	s.ExecuteFn = func(p Player) (int, error) {
 		_, code := p.CompleteTask(tile)
@@ -88,6 +91,7 @@ func NewDepositInventoryStep(tile models.MapTile) Step {
 	}{
 		Stepper: &Stepper{},
 	}
+	s.Description = "Deposit Inventory"
 	s.StopFn = func(p Player) bool { return true }
 	s.ExecuteFn = func(p Player) (int, error) {
 		code := p.DepositInventory(tile)
