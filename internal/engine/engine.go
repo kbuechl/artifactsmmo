@@ -149,44 +149,41 @@ func (e *GameEngine) generatePlayerCommand(resp commands.CommandResponse, player
 				return nil, fmt.Errorf("cannot find monster for: %s", task.Code)
 			}
 
-			if player.CanWinFight(models.Earth, *monster) {
+			if e.canPlayerWinFight(*monster, player) {
 				//todo: can we add in the turn in task step here after the fight step since we know the task is done after this?
 				return e.newFightStep(task.Code, task.Total-task.Progress, player)
+			} else {
+				items, err := e.findMinGear(*monster, player)
+				if err != nil {
+					return nil, err
+				}
+				if items == nil {
+					e.logger.Warn("cannot make equipment for task", "monster", task.Code, "player", player.Name)
+				}
+				e.logger.Info("got gear", "gear", items)
+				//todo: craft items
 			}
 			e.logger.Info("cannot win fight for given task, skipping task", "player", player.Name, "monster", task.Code)
 			fallthrough
 		default:
+			//we should craft weapons and armor to get better so we can beat the given task
+
+			// lets work on crafting and collecting. We can pick one to improve, and find the highest item we can currently craft for the most xp, then find out how to get enough of that resource
+
 			//todo: this default logic is temporary
 			//temporarily use 50/50 chance to fight random or gather some resource
-			if rand.Int()%2 == 0 { //resource gather
-				e.logger.Warn("unmapped task type", "type", player.Data().Task.Type)
-				//for now just prioritize lowest skill to mine
-				pData := player.Data()
+			e.logger.Warn("unmapped task type", "type", player.Data().Task.Type)
+			//for now just prioritize lowest skill to mine
+			pData := player.Data()
 
-				skill := []string{models.WoodcuttingSkill, models.FishingSkill, models.MiningSkill}[rand.Intn(2)]
-				resources := e.world.GetResourcesBySkill(skill, pData.Skills[skill])
+			skill := []string{models.WoodcuttingSkill, models.FishingSkill, models.MiningSkill}[rand.Intn(2)]
+			resources := e.world.GetResourcesBySkill(skill, pData.Skills[skill])
 
-				if len(resources) == 0 {
-					panic(fmt.Sprintf("no resources found for skill %s", skill))
-				}
-
-				return e.newGatherStep(resources[0].Code, rand.Intn(9)+1, player)
-			} else {
-				//temp code, fight random monster
-				monsters := e.world.FilterMonsters(player)
-				if len(monsters) == 0 {
-					return nil, fmt.Errorf("no fightable monsters for %s", player.Name)
-				}
-
-				i := rand.Intn(len(monsters))
-				if len(monsters) == 1 {
-					i = 0
-				}
-				m := monsters[i]
-
-				return e.newFightStep(m.Code, rand.Intn(9)+1, player)
+			if len(resources) == 0 {
+				panic(fmt.Sprintf("no resources found for skill %s", skill))
 			}
 
+			return e.newGatherStep(resources[0].Code, rand.Intn(9)+1, player)
 		}
 	}
 }

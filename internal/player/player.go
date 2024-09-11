@@ -58,6 +58,7 @@ type PlayerData struct {
 	Level        int
 	AttackStats  map[models.AttackType]int
 	DefenseStats map[models.AttackType]int
+	Equipment    map[string]string
 }
 
 type playerResponse struct {
@@ -293,15 +294,22 @@ func (p *Player) UpdateData(s client.CharacterSchema) {
 			models.Water: s.ResWater,
 			models.Earth: s.ResEarth,
 		},
+		Equipment: map[string]string{
+			"helmet":     s.HelmetSlot,
+			"boots":      s.BootsSlot,
+			"body_armor": s.BodyArmorSlot,
+			"shield":     s.ShieldSlot,
+			"leg_armor":  s.LegArmorSlot,
+			"ring1":      s.Ring1Slot,
+			"ring2":      s.Ring2Slot,
+			"weapon":     s.WeaponSlot,
+		},
 	}
 	p.mu.Unlock()
 
-	//temporary while we cant use expiration for fighting due to early timeout
-	// if cd, err := s.CooldownExpiration.AsCharacterSchemaCooldownExpiration0(); err != nil {
-	// 	waitForCooldownSeconds(s.Cooldown)
-	// } else if cd.After(time.Now()) {
-	waitForCooldownSeconds(s.Cooldown)
-	// }
+	if s.CooldownExpiration.After(time.Now()) {
+		waitForCooldownSeconds(s.Cooldown)
+	}
 }
 
 func (p *Player) InventoryCapacity() int {
@@ -334,27 +342,6 @@ func (p *Player) Fight(tile models.MapTile) (bool, int) {
 	p.UpdateData(resp.JSON200.Data.Character)
 
 	return resp.JSON200.Data.Fight.Result == "win", resp.StatusCode()
-}
-
-func (p *Player) CanWinFight(attackType models.AttackType, monster models.Monster) bool {
-	// Calculate the damage each entity deals
-	monsterDmg := calculateAttackDamage(monster.AttackDmg, p.Data().DefenseStats[monster.AttackType])
-
-	//figure out all the damage we do across all the types
-	playerDmg := 0
-	for dmgType, attack := range p.Data().AttackStats {
-		playerDmg += calculateAttackDamage(attack, monster.Resistances[dmgType])
-	}
-
-	// Calculate how many turns each entity can take
-	playerTurns := float64(monster.Hp) / float64(playerDmg)
-	monsterTurns := float64(p.Data().Hp) / float64(monsterDmg)
-
-	// Determine the outcome
-	if playerTurns >= float64(maxFightRounds) || playerTurns >= monsterTurns {
-		return false
-	}
-	return true
 }
 
 func (p *Player) CheckInventory(code string) int {

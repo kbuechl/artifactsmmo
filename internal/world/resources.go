@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+
 	"github.com/promiseofcake/artifactsmmo-go-client/client"
 )
 
@@ -52,4 +54,29 @@ func (w *Collector) getAllResources(ctx context.Context) (ResourceMap, error) {
 	}
 
 	return result, nil
+}
+
+func (w *Collector) loadItems(ctx context.Context) error {
+	for page := 1; ; page++ {
+		resp, err := w.client.GetAllItemsItemsGetWithResponse(ctx, &client.GetAllItemsItemsGetParams{
+			Page: &page,
+		})
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode() != http.StatusOK {
+			return fmt.Errorf("error getting items, status code: %d", resp.StatusCode())
+		}
+		w.mu.Lock()
+		w.Items = append(w.Items, resp.JSON200.Data...)
+		w.mu.Unlock()
+
+		if p, err := resp.JSON200.Pages.AsDataPageItemSchemaPages0(); err != nil {
+			return err
+		} else if p >= page {
+			break
+		}
+	}
+
+	return nil
 }

@@ -9,8 +9,7 @@ type Monster struct {
 	Code        string
 	Level       int
 	Hp          int
-	AttackType  AttackType
-	AttackDmg   int
+	Attacks     map[AttackType]int
 	Resistances map[AttackType]int
 	MinGold     int
 	MaxGold     int
@@ -32,21 +31,12 @@ func MonsterFromSchema(monster client.MonsterSchema) Monster {
 			Earth: monster.ResEarth,
 			Air:   monster.ResAir,
 		},
-	}
-
-	switch {
-	case monster.AttackWater != 0:
-		m.AttackType = Water
-		m.AttackDmg = monster.AttackWater
-	case monster.AttackFire != 0:
-		m.AttackType = Fire
-		m.AttackDmg = monster.AttackFire
-	case monster.AttackAir != 0:
-		m.AttackType = Air
-		m.AttackDmg = monster.AttackAir
-	case monster.AttackEarth != 0:
-		m.AttackType = Earth
-		m.AttackDmg = monster.AttackEarth
+		Attacks: map[AttackType]int{
+			Fire:  monster.AttackFire,
+			Water: monster.AttackWater,
+			Earth: monster.AttackEarth,
+			Air:   monster.AttackAir,
+		},
 	}
 
 	return m

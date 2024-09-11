@@ -2,7 +2,6 @@ package world
 
 import (
 	"artifactsmmo/internal/models"
-	"artifactsmmo/internal/player"
 	"fmt"
 	"github.com/promiseofcake/artifactsmmo-go-client/client"
 	"net/http"
@@ -39,30 +38,6 @@ func (w *Collector) loadMonsters() error {
 
 	w.Monsters = data
 	return nil
-}
-
-// FilterMonsters gets a slice of monsters the player can kill
-func (w *Collector) FilterMonsters(p *player.Player) []models.Monster {
-	//todo: later we can select the right weapons and stuff for now lets use what we have
-	var skill models.AttackType
-	skillDmg := 0
-	for s, dmg := range p.Data().AttackStats {
-		if dmg > skillDmg {
-			skill = s
-			skillDmg = dmg
-		}
-	}
-
-	w.logger.Debug("top skill for monster filter", "skill", skill, "dmg", skillDmg)
-
-	monsters := make([]models.Monster, 0)
-	for _, m := range w.Monsters {
-		if p.CanWinFight(skill, m) {
-			monsters = append(monsters, m)
-		}
-	}
-
-	return monsters
 }
 
 func (w *Collector) GetMonster(code string) *models.Monster {

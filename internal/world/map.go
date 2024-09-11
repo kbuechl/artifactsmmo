@@ -4,9 +4,10 @@ import (
 	"artifactsmmo/internal/models"
 	"context"
 	"fmt"
-	"github.com/promiseofcake/artifactsmmo-go-client/client"
 	"math"
 	"net/http"
+
+	"github.com/promiseofcake/artifactsmmo-go-client/client"
 )
 
 type mapContentType int

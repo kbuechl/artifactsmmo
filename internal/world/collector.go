@@ -4,17 +4,19 @@ import (
 	"artifactsmmo/internal/models"
 	"context"
 	"fmt"
-	"github.com/promiseofcake/artifactsmmo-go-client/client"
-	"github.com/sagikazarmark/slog-shim"
 	"net/http"
 	"slices"
 	"sync"
+
+	"github.com/promiseofcake/artifactsmmo-go-client/client"
+	"github.com/sagikazarmark/slog-shim"
 )
 
 type Collector struct {
 	Resources   ResourceMap
 	tiles       []models.MapTile
 	Monsters    []models.Monster
+	Items       []client.ItemSchema
 	bankItems   []client.SimpleItemSchema
 	bankDetails client.BankSchema
 	mu          sync.RWMutex
@@ -54,6 +56,10 @@ func NewCollector(ctx context.Context, c *client.ClientWithResponses) (*Collecto
 
 	if err = collector.loadMonsters(); err != nil {
 		return nil, fmt.Errorf("load monsters: %w", err)
+	}
+
+	if err = collector.loadItems(ctx); err != nil {
+		return nil, fmt.Errorf("loading items: %w", err)
 	}
 
 	collector.start()
