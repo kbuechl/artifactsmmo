@@ -17,7 +17,7 @@ type Collector struct {
 	tiles       []models.MapTile
 	Monsters    []models.Monster
 	Items       []client.ItemSchema
-	bankItems   []client.SimpleItemSchema
+	BankItems   []client.SimpleItemSchema
 	bankDetails client.BankSchema
 	mu          sync.RWMutex
 	ctx         context.Context
@@ -139,7 +139,7 @@ func (w *Collector) UpdateBankGold(q int) {
 func (w *Collector) UpdateBankItems(schema []client.SimpleItemSchema) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.bankItems = schema
+	w.BankItems = schema
 }
 
 func (w *Collector) UpdateBankDetails(details client.BankSchema) {

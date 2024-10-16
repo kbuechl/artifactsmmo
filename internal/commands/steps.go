@@ -103,3 +103,22 @@ func NewDepositInventoryStep(tile models.MapTile) Step {
 
 	return s
 }
+
+func NewWithdrawInventoryStep(itemCode string, q int) Step {
+	s := struct {
+		*Stepper
+	}{
+		Stepper: &Stepper{},
+	}
+	s.Description = "Withdraw Inventory"
+	s.StopFn = func(p Player) bool { return true }
+	s.ExecuteFn = func(p Player) (int, error) {
+		code := p.WithdrawItem(itemCode, q)
+		if code != http.StatusOK {
+			return code, fmt.Errorf("withdraw inventory failed with code %d", code)
+		}
+		return code, nil
+	}
+
+	return s
+}

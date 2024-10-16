@@ -2,8 +2,9 @@ package commands
 
 import (
 	"artifactsmmo/internal/models"
-	"github.com/promiseofcake/artifactsmmo-go-client/client"
 	"strings"
+
+	"github.com/promiseofcake/artifactsmmo-go-client/client"
 )
 
 type Action int
@@ -21,6 +22,7 @@ type Player interface {
 	AcceptNewTask(tile models.MapTile) int
 	CompleteTask(tile models.MapTile) (*client.TaskRewardSchema, int)
 	ExchangeTaskCoins(tile models.MapTile) (*client.TaskRewardSchema, int)
+	WithdrawItem(code string, qty int) int
 }
 
 type StopStepFn func(p Player) bool

@@ -223,6 +223,28 @@ func (p *Player) DepositInventory(tile models.MapTile) int {
 	return code
 }
 
+func (p *Player) WithdrawItem(code string, qty int) int {
+	resp, err := p.client.ActionWithdrawBankMyNameActionBankWithdrawPostWithResponse(p.ctx, p.Name, client.ActionWithdrawBankMyNameActionBankWithdrawPostJSONRequestBody{
+		Code:     code,
+		Quantity: qty,
+	})
+	if err != nil {
+		p.logger.Debug("withdraw inventory: %v", err)
+		return resp.StatusCode()
+	}
+
+	if resp.HTTPResponse.StatusCode == 200 {
+		p.bankChannel <- models.BankResponse{
+			Gold:  nil,
+			Items: &resp.JSON200.Data.Bank,
+		}
+		p.UpdateData(resp.JSON200.Data.Character)
+	}
+
+	p.logger.Debug("withdraw complete")
+	return resp.StatusCode()
+}
+
 // depositItem is meant to be called when the player is already at the bank, If a use case comes up where the player needs to deposit a single item we will need to refactor
 func (p *Player) depositItem(code string, qty int) int {
 	resp, err := p.client.ActionDepositBankMyNameActionBankDepositPostWithResponse(p.ctx, p.Name, client.ActionDepositBankMyNameActionBankDepositPostJSONRequestBody{
